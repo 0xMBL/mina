@@ -2,7 +2,15 @@
 
 # test replayer on known archive db
 
-REPLAYER_DIR=src/app/replayer
+DEFAULT_REPLAYER_DIR=src/app/replayer
+DEFAULT_REPLAYER_APP=./_build/default/src/app/replayer/replayer.exe
+
+while [[ "$#" -gt 0 ]]; do case $1 in
+  -d|--dir) REPLAYER_DIR="$2"; shift;;
+  -a|--app) REPLAYER_APP="$2"; shift;;
+  *) echo "Unknown parameter passed: $1"; exit 1;;
+esac; shift; done
+
 DB=archive
 
 DOCKER_IMAGE=12.4-alpine
@@ -53,7 +61,7 @@ echo "Building replayer"
 make replayer
 
 echo "Running replayer"
-./_build/default/src/app/replayer/replayer.exe --archive-uri $PG_CONN --input-file $REPLAYER_DIR/test/input.json
+$REPLAYER_APP --archive-uri $PG_CONN --input-file $REPLAYER_DIR/test/input.json
 
 RESULT=$?
 
