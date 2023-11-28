@@ -2,7 +2,7 @@ open Async
 open Core
 open Integration_test_lib
 module Timeout = Timeout_lib.Core_time
-module Node = Swarm_network.Node
+module Node = Docker_network.Node
 
 (* TODO: Implement local engine logging *)
 
@@ -14,7 +14,7 @@ type t =
 
 let event_reader { event_reader; _ } = event_reader
 
-let create ~logger ~(network : Swarm_network.t) =
+let create ~logger ~(network : Docker_network.t) =
   [%log info] "docker_pipe_log_engine: create %s" network.namespace ;
   let event_reader, event_writer = Pipe.create () in
   Deferred.Or_error.return { logger; event_reader; event_writer }

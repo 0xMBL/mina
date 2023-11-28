@@ -5,13 +5,13 @@ module Envs = struct
     [ ("DAEMON_REST_PORT", "3085")
     ; ("DAEMON_CLIENT_PORT", "8301")
     ; ("DAEMON_METRICS_PORT", "10001")
-    ; ("CODA_PRIVKEY_PASS", "naughty blue worm")
-    ; ("CODA_LIBP2P_PASS", "")
+    ; ("MINA_PRIVKEY_PASS", "naughty blue worm")
+    ; ("MINA_LIBP2P_PASS", "")
     ]
 
   let snark_coord_envs ~snark_coordinator_key ~snark_worker_fee =
-    [ ("CODA_SNARK_KEY", snark_coordinator_key)
-    ; ("CODA_SNARK_FEE", snark_worker_fee)
+    [ ("MINA_SNARK_KEY", snark_coordinator_key)
+    ; ("MINA_SNARK_FEE", snark_worker_fee)
     ; ("WORK_SELECTION", "seq")
     ]
     @ base_node_envs
@@ -53,8 +53,10 @@ module Cmd = struct
     module Peer = struct
       type t = string
 
-      let default =
-        "/dns4/seed/tcp/10401/p2p/12D3KooWCoGWacXE4FRwAX8VqhnWVKhz5TTEecWEuGmiNrDt2XLf"
+      let default ~dns_name =
+        Printf.sprintf
+          "/dns4/%s/tcp/10101/p2p/12D3KooWCoGWacXE4FRwAX8VqhnWVKhz5TTEecWEuGmiNrDt2XLf"
+          dns_name
     end
 
     module Postgres_uri = struct
@@ -99,7 +101,7 @@ module Cmd = struct
 
   module Base = struct
     type t =
-      { peer : Peer.t
+      { peer : Peer.t option
       ; log_level : Log_level.t
       ; log_snark_work_gossip : bool
       ; log_txn_pool_gossip : bool
@@ -108,10 +110,18 @@ module Cmd = struct
       ; rest_port : string
       ; metrics_port : string
       ; config_file : string
+      ; libp2p_key_path : string
       }
 
-    let default ~config_file =
-      { peer = Peer.default
+    let default ~config_file ?dns_name =
+      let peer_option =
+        match dns_name with
+        | Some name ->
+            Some (Peer.default ~dns_name:name)
+        | None ->
+            None
+      in
+      { peer = peer_option
       ; log_level = Log_level.Debug
       ; log_snark_work_gossip = true
       ; log_txn_pool_gossip = true
@@ -120,36 +130,44 @@ module Cmd = struct
       ; rest_port = "3085"
       ; metrics_port = "10001"
       ; config_file
+      ; libp2p_key_path = "/root/libp2p-keys/key"
       }
 
-    let to_string t =
-      [ "-config-file"
-      ; t.config_file
-      ; "-log-level"
-      ; Log_level.to_string t.log_level
-      ; "-log-snark-work-gossip"
-      ; Bool.to_string t.log_snark_work_gossip
-      ; "-log-txn-pool-gossip"
-      ; Bool.to_string t.log_txn_pool_gossip
-      ; "-generate-genesis-proof"
-      ; Bool.to_string t.generate_genesis_proof
-      ; "-client-port"
-      ; t.client_port
-      ; "-rest-port"
-      ; t.rest_port
-      ; "-metrics-port"
-      ; t.metrics_port
-      ; "-peer"
-      ; Peer.default
-      ; "-log-json"
-      ; "--insecure-rest-server"
-      ]
+    let to_list t =
+      let base_args =
+        [ "-config-file"
+        ; t.config_file
+        ; "-log-level"
+        ; Log_level.to_string t.log_level
+        ; "-log-snark-work-gossip"
+        ; Bool.to_string t.log_snark_work_gossip
+        ; "-log-txn-pool-gossip"
+        ; Bool.to_string t.log_txn_pool_gossip
+        ; "-generate-genesis-proof"
+        ; Bool.to_string t.generate_genesis_proof
+        ; "-client-port"
+        ; t.client_port
+        ; "-rest-port"
+        ; t.rest_port
+        ; "-metrics-port"
+        ; t.metrics_port
+        ; "--libp2p-keypair"
+        ; t.libp2p_key_path
+        ; "-log-json"
+        ; "--insecure-rest-server"
+        ]
+      in
+      let peer_args =
+        match t.peer with Some peer -> [ "-peer"; peer ] | None -> []
+      in
+      List.concat [ base_args; peer_args ]
 
-    let default_cmd ~config_file = default ~config_file |> to_string
+    let default_cmd ~config_file ?dns_name =
+      default ~config_file ?dns_name |> to_list
   end
 
   module Seed = struct
-    let cmd ~config_file = [ "daemon"; "-seed" ] @ Base.default_cmd ~config_file
+    let cmd = [ "daemon"; "-seed" ]
 
     let connect_to_archive ~archive_node = [ "-archive-address"; archive_node ]
   end
@@ -167,7 +185,7 @@ module Cmd = struct
       ; enable_peer_exchange = true
       }
 
-    let cmd t ~config_file =
+    let cmd t =
       [ "daemon"
       ; "-block-producer-key"
       ; t.block_producer_key
@@ -176,7 +194,6 @@ module Cmd = struct
       ; "-enable-peer-exchange"
       ; Bool.to_string t.enable_peer_exchange
       ]
-      @ Base.default_cmd ~config_file
   end
 
   module Snark_coordinator = struct
@@ -198,7 +215,7 @@ module Cmd = struct
       ; "-work-selection"
       ; t.work_selection
       ]
-      @ Base.default_cmd ~config_file
+      @ Base.default_cmd ~config_file ?dns_name:None
   end
 
   module Snark_worker = struct
@@ -221,7 +238,7 @@ module Cmd = struct
       ; "-daemon-address"
       ; t.daemon_address ^ ":" ^ t.daemon_port
       ]
-      @ Base.default_cmd ~config_file
+      @ Base.default_cmd ~config_file ?dns_name:None
   end
 
   module Archive_node = struct
@@ -235,7 +252,7 @@ module Cmd = struct
     let create postgres_uri = { postgres_uri; server_port = "3086" }
 
     let cmd t ~config_file =
-      [ "coda-archive"
+      [ "mina-archive"
       ; "run"
       ; "-postgres-uri"
       ; t.postgres_uri
@@ -253,12 +270,13 @@ module Cmd = struct
     | Snark_worker of Snark_worker.t
     | Archive_node of Archive_node.t
 
-  let create_cmd t ~config_file =
+  let create_cmd t ~config_file ?docker_dns_name =
     match t with
     | Seed ->
-        Seed.cmd ~config_file
+        Seed.cmd @ Base.default_cmd ~config_file ?dns_name:docker_dns_name
     | Block_producer args ->
-        Block_producer.cmd args ~config_file
+        Block_producer.cmd args
+        @ Base.default_cmd ~config_file ?dns_name:docker_dns_name
     | Snark_coordinator args ->
         Snark_coordinator.cmd args ~config_file
     | Snark_worker args ->
@@ -273,6 +291,8 @@ module Services = struct
 
     let env = Envs.base_node_envs
 
+    let entrypoint = [ "/root/entrypoint.sh" ]
+
     let cmd = Cmd.Seed
   end
 
@@ -282,6 +302,8 @@ module Services = struct
     let secret_name = "keypair"
 
     let env = Envs.base_node_envs
+
+    let entrypoint = [ "/root/entrypoint.sh" ]
 
     let cmd args = Cmd.Block_producer args
   end
@@ -293,6 +315,8 @@ module Services = struct
 
     let env = Envs.snark_coord_envs
 
+    let entrypoint = [ "/root/entrypoint.sh" ]
+
     let cmd args = Cmd.Snark_coordinator args
   end
 
@@ -300,6 +324,8 @@ module Services = struct
     let name = "snark-worker"
 
     let env = []
+
+    let entrypoint = [ "/root/entrypoint.sh" ]
 
     let cmd args = Cmd.Snark_worker args
   end
@@ -310,6 +336,8 @@ module Services = struct
     let postgres_name = "postgres"
 
     let server_port = "3086"
+
+    let entrypoint = [ "/root/entrypoint.sh" ]
 
     let envs = Envs.base_node_envs
 
