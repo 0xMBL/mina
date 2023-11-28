@@ -155,8 +155,6 @@ let%test_module "Block producer test" =
 
       let block_produced_bvar = Bvar.create ()
 
-      let slot_tx_end = None
-
       (* let max_frontier_length =
          Transition_frontier.global_max_length Genesis_constants.compiled *)
 
@@ -183,7 +181,7 @@ let%test_module "Block producer test" =
           ~coinbase_receiver ~frontier_reader:frontier_broadcast_pipe_r
           ~transition_writer:producer_transition_writer
           ~set_next_producer_timing ~log_block_creation ~precomputed_values
-          ~block_reward_threshold:None ~block_produced_bvar ~slot_tx_end
+          ~block_reward_threshold:None ~block_produced_bvar
 
       (* let gen_crumb =
            Transition_frontier.Breadcrumb.For_tests.gen ~logger ~precomputed_values
@@ -195,13 +193,13 @@ let%test_module "Block producer test" =
 
       (* let generate_next_state ~previous_protocol_state ~staged_ledger
            ~transactions ~get_completed_work ~block_data ~winner_pk
-           ~scheduled_time ~block_reward_threshold ~slot_tx_end =
+           ~scheduled_time ~block_reward_threshold  =
          Block_producer.generate_next_state ~constraint_constants
            ~previous_protocol_state ~time_controller ~staged_ledger ~transactions
            ~get_completed_work ~logger
            ~(block_data : Consensus.Data.Block_data.t)
            ~winner_pk ~scheduled_time ~log_block_creation ~block_reward_threshold
-           ~slot_tx_end *)
+      *)
 
       (* let gen_transition_frontier =
          Transition_frontier.For_tests.gen ~logger ~verifier ~trust_system
@@ -233,7 +231,6 @@ let%test_module "Block producer test" =
                let get_completed_work _ = None in
                let scheduled_time = Block_time.now Test_setup.time_controller in
                let block_reward_threshold = None in
-               let slot_tx_end = None in
                let now = Block_time.now Test_setup.time_controller in
                let consensus_state =
                  Transition_frontier.best_tip transition_frontier
@@ -315,8 +312,7 @@ let%test_module "Block producer test" =
          precomputed_values:Genesis_proof.t ;
          block_reward_threshold:Currency.Amount.t option ;
          block_produced_bvar:(Frontier_base.Breadcrumb.t, [> Core.write ])
-                             Async.Bvar.t ;
-         slot_tx_end:Mina_numbers.Global_slot.t option
+                             Async.Bvar.t
                }
 
 
@@ -367,7 +363,7 @@ let%test_module "Block producer test" =
                ~frontier_reader:frontier_broadcast_pipe_r
                ~transition_writer:producer_transition_writer ~set_next_producer_timing
                ~log_block_creation:false ~precomputed_values
-               ~block_reward_threshold:None ~block_produced_bvar ~slot_tx_end *)
+               ~block_reward_threshold:None ~block_produced_bvar  *)
 
            let%test_unit "generate_next_state with slot_tx_end not set" =
            match Broadcast_pipe.Reader.peek frontier_reader with
@@ -386,7 +382,7 @@ let%test_module "Block producer test" =
                  ~get_completed_work ~logger
                  ~(block_data : Consensus.Data.Block_data.t)
                  ~winner_pk ~scheduled_time ~log_block_creation ~block_reward_threshold
-                 ~consensus_constants ~slot_tx_end
+                 ~consensus_constants
              in
              () *)
 
