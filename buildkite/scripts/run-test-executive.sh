@@ -26,6 +26,6 @@ mina-test-executive cloud "$TEST_NAME" \
   --mina-image "$MINA_IMAGE" \
   --archive-image "$ARCHIVE_IMAGE" \
   --mina-automation-location ./automation \
-  --generate-code-coverage \
+  --generate-code-coverage true \
   | tee "$TEST_NAME.test.log" \
   | mina-logproc -i inline -f '!(.level in ["Debug", "Spam"])'
