@@ -59,25 +59,6 @@ case "${DEB_CODENAME##*=}" in
 esac
 IMAGE="--build-arg image=${IMAGE}"
 
-# Determine profile for mina name. To preserve backward compatibility standard profile is default. 
-case "${DEB_PROFILE}" in
-  standard)
-    DOCKER_DEB_PROFILE=""
-    ;;
-  *)
-    DOCKER_DEB_PROFILE="--build-arg deb_profile=${DEB_PROFILE}"
-    ;;
-esac
-
-
-# Determine profile for mina name. To preserve backward compatibility standard profile is default. 
-if [[ -z "$INSTRUMENT" ]] || [[ "$INSTRUMENT" -eq 0 ]]; then
-  DOCKER_MINA_BUILD_PROFILE=""
-else
-  DOCKER_MINA_BUILD_PROFILE="--build-arg build_profile=instrumented"
-fi
-
-
 # Debug prints for visability
 # Substring removal to cut the --build-arg arguments on the = so that the output is exactly the input flags https://wiki.bash-hackers.org/syntax/pe#substring_removal
 echo "--service ${SERVICE} --version ${VERSION} --branch ${BRANCH##*=} --deb-version ${DEB_VERSION##*=} --deb-profile ${DOCKER_DEB_PROFILE##*=} --deb-release ${DEB_RELEASE##*=} --deb-codename ${DEB_CODENAME##*=}"
@@ -142,6 +123,25 @@ itn-orchestrator)
 
 esac
 
+# Determine profile for mina name. To preserve backward compatibility standard profile is default. 
+case "${DEB_PROFILE}" in
+  standard)
+    DOCKER_DEB_PROFILE=""
+    ;;
+  *)
+    DOCKER_DEB_PROFILE="--build-arg deb_profile=${DEB_PROFILE}"
+    SERVICE=${SERVICE}-lightnet
+    ;;
+esac
+
+# Determine profile for mina name. To preserve backward compatibility standard profile is default. 
+if [[ -z "$INSTRUMENT" ]] || [[ "$INSTRUMENT" -eq 0 ]]; then
+  DOCKER_MINA_BUILD_PROFILE=""
+
+else
+  DOCKER_MINA_BUILD_PROFILE="--build-arg build_profile=instrumented"
+  SERVICE=${SERVICE}-instrumented
+fi
 
 REPO="--build-arg MINA_REPO=${BUILDKITE_PULL_REQUEST_REPO}"
 if [[ -z "${BUILDKITE_PULL_REQUEST_REPO}" ]]; then
