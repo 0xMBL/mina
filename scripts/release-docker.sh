@@ -25,7 +25,6 @@ function usage() {
   echo "      --deb-release         The debian package release channel to pull from (unstable,alpha,beta,stable). Default=unstable"
   echo "      --deb-version         The version string for the debian package to install"
   echo "      --deb-profile         The profile string for the debian package to install"
-  echo "  -i, --instrument          Flag for using instrumented mina"
   echo ""
   echo "Example: $0 --service faucet --version v0.1.0"
   echo "Valid Services: ${VALID_SERVICES[*]}"
@@ -34,7 +33,6 @@ function usage() {
 
 while [[ "$#" -gt 0 ]]; do case $1 in
   --no-upload) NOUPLOAD=1;;
-  -i|--instrument) INSTRUMENT=1;;
   -s|--service) SERVICE="$2"; shift;;
   -v|--version) VERSION="$2"; shift;;
   -n|--network) NETWORK="--build-arg network=$2"; shift;;
@@ -76,6 +74,12 @@ mina-archive)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-archive"
   DOCKER_CONTEXT="dockerfiles/"
   ;;
+mina-archive-instrumented)
+  DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-archive"
+  DOCKER_CONTEXT="dockerfiles/"
+  VERSION="${VERSION}-${NETWORK##*=}"
+  DOCKER_MINA_BUILD_PROFILE="--build-arg build_profile=instrumented"
+  ;;
 bot)
   DOCKERFILE_PATH="frontend/bot/Dockerfile"
   DOCKER_CONTEXT="frontend/bot"
@@ -84,6 +88,12 @@ mina-daemon)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-daemon"
   DOCKER_CONTEXT="dockerfiles/"
   VERSION="${VERSION}-${NETWORK##*=}"
+  ;;
+mina-daemon-instrumented)
+  DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-daemon"
+  DOCKER_CONTEXT="dockerfiles/"
+  VERSION="${VERSION}-${NETWORK##*=}"
+  DOCKER_MINA_BUILD_PROFILE="--build-arg build_profile=instrumented"
   ;;
 mina-toolchain)
   DOCKERFILE_PATH="dockerfiles/stages/1-build-deps dockerfiles/stages/2-opam-deps dockerfiles/stages/3-toolchain"
@@ -123,6 +133,11 @@ itn-orchestrator)
 
 esac
 
+REPO="--build-arg MINA_REPO=${BUILDKITE_PULL_REQUEST_REPO}"
+if [[ -z "${BUILDKITE_PULL_REQUEST_REPO}" ]]; then
+  REPO="--build-arg MINA_REPO=https://github.com/MinaProtocol/mina"
+fi
+
 # Determine profile for mina name. To preserve backward compatibility standard profile is default. 
 case "${DEB_PROFILE}" in
   standard)
@@ -133,20 +148,6 @@ case "${DEB_PROFILE}" in
     SERVICE=${SERVICE}-lightnet
     ;;
 esac
-
-# Determine profile for mina name. To preserve backward compatibility standard profile is default. 
-if [[ -z "$INSTRUMENT" ]] || [[ "$INSTRUMENT" -eq 0 ]]; then
-  DOCKER_MINA_BUILD_PROFILE=""
-
-else
-  DOCKER_MINA_BUILD_PROFILE="--build-arg build_profile=instrumented"
-  SERVICE=${SERVICE}-instrumented
-fi
-
-REPO="--build-arg MINA_REPO=${BUILDKITE_PULL_REQUEST_REPO}"
-if [[ -z "${BUILDKITE_PULL_REQUEST_REPO}" ]]; then
-  REPO="--build-arg MINA_REPO=https://github.com/MinaProtocol/mina"
-fi
 
 DOCKER_REGISTRY="gcr.io/o1labs-192920"
 TAG="${DOCKER_REGISTRY}/${SERVICE}:${VERSION}"
@@ -163,6 +164,7 @@ if [[ -z "${DOCKER_CONTEXT}" ]]; then
 else
   docker build $CACHE $NETWORK $IMAGE $DEB_CODENAME $DEB_RELEASE $DEB_VERSION $DOCKER_DEB_PROFILE $DOCKER_MINA_BUILD_PROFILE $BRANCH $REPO $extra_build_args $DOCKER_CONTEXT -t "$TAG" -f $DOCKERFILE_PATH
 fi
+
 
 if [[ -z "$NOUPLOAD" ]] || [[ "$NOUPLOAD" -eq 0 ]]; then
   
