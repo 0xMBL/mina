@@ -35,6 +35,7 @@ module Node = struct
     { network_keypair : Network_keypair.t option
     ; service_id : string
     ; has_archive_container : bool
+    ; graphql_port : string
     }
 
   type t =
@@ -55,7 +56,9 @@ module Node = struct
   let get_ingress_uri node =
     let host = Printf.sprintf "http://localhost/" in
     let path = Printf.sprintf "/%s/graphql" node.service_info.service_id in
-    Uri.make ~scheme:"http" ~host ~path ~port:80 ()
+    Uri.make ~scheme:"http" ~host ~path
+      ~port:(node.service_info.graphql_port |> Int.of_string)
+      ()
 
   let run_in_container ?(exit_code = 10) container_id ~cmd =
     let%bind.Deferred cwd = Unix.getcwd () in
@@ -98,7 +101,10 @@ end
 
 module Service_to_deploy = struct
   type service_to_deploy_config =
-    { network_keypair : Network_keypair.t option; has_archive_container : bool }
+    { network_keypair : Network_keypair.t option
+    ; has_archive_container : bool
+    ; graphql_port : string
+    }
 
   type t =
     { stack_name : string
@@ -110,8 +116,8 @@ module Service_to_deploy = struct
     { stack_name; service_name; service_info }
 
   let init_service_to_deploy_config ?(network_keypair = None)
-      ?(has_archive_container = false) =
-    { network_keypair; has_archive_container }
+      ?(has_archive_container = false) ~graphql_port =
+    { network_keypair; has_archive_container; graphql_port }
 
   let get_node_from_service t ~config =
     let%bind cwd = Unix.getcwd () in
@@ -127,6 +133,7 @@ module Service_to_deploy = struct
             { service_id
             ; network_keypair = t.service_info.network_keypair
             ; has_archive_container = t.service_info.has_archive_container
+            ; graphql_port = t.service_info.graphql_port
             }
         ; config
         ; should_be_running = false

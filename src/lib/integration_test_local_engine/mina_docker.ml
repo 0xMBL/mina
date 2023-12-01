@@ -19,38 +19,58 @@ let mina_create_schema = "create_schema.sql"
 module Network_config = struct
   module Cli_inputs = Cli_inputs
 
-  module Port = struct
-    type t = string list
+  module PortManager = struct
+    type t =
+      { mutable available_ports : int list
+      ; mutable used_ports : int list
+      ; min_port : int
+      ; max_port : int
+      }
 
-    let get_new_port t =
-      match t with [] -> [ 7000 ] | x :: xs -> [ x + 1 ] @ [ x ] @ xs
+    let create ~min_port ~max_port =
+      let available_ports = List.range min_port max_port in
+      { available_ports; used_ports = []; min_port; max_port }
 
-    let get_latest_port t = match t with [] -> 7000 | x :: _ -> x
+    let allocate_port t =
+      match t.available_ports with
+      | [] ->
+          failwith "No available ports"
+      | port :: rest ->
+          t.available_ports <- rest ;
+          t.used_ports <- port :: t.used_ports ;
+          port |> Int.to_string
 
-    let create_rest_port t =
-      match t with [] -> "7000:3085" | x :: _ -> Int.to_string x ^ ":3085"
+    let release_port t port =
+      t.used_ports <- List.filter t.used_ports ~f:(fun p -> p <> port) ;
+      t.available_ports <- port :: t.available_ports
+
+    let get_latest_used_port t =
+      match t.used_ports with
+      | [] ->
+          failwith "No used ports"
+      | port :: _ ->
+          port |> Int.to_string
   end
 
   type docker_volume_configs = { name : string; data : string }
   [@@deriving to_yojson]
 
-  (* TODO: refactor `mina_automation.ml` version to seperate module for these node definitions *)
   type block_producer_config =
     { name : string
     ; keypair : Network_keypair.t
     ; libp2p_secret : string
-    ; ports : (string * string) list
+    ; rest_port : string
     }
   [@@deriving to_yojson]
 
   type snark_worker_config =
-    { name : string; public_key : string; ports : (string * string) list }
+    { name : string; public_key : string; rest_port : string }
   [@@deriving to_yojson]
 
   type snark_coordinator_config =
     { name : string
     ; public_key : string
-    ; ports : (string * string) list
+    ; rest_port : string
     ; snark_worker_fee : string
     ; worker_nodes : snark_worker_config list
     }
@@ -61,11 +81,11 @@ module Network_config = struct
     ; id : string
     ; schema : string
     ; schema_aux_files : string list
-    ; ports : (string * string) list
+    ; rest_port : string
     }
   [@@deriving to_yojson]
 
-  type seed_config = { name : string; ports : (string * string) list }
+  type seed_config = { name : string; rest_port : string }
   [@@deriving to_yojson]
 
   type docker_config =
@@ -344,14 +364,13 @@ module Network_config = struct
       Network_keypair.create_network_keypair ~keypair_name ~keypair
     in
     let open Docker_node_config.Services in
-    let available_host_ports_ref = ref [] in
+    let port_manager = PortManager.create ~min_port:7000 ~max_port:7100 in
     let block_producer_config name keypair =
-      available_host_ports_ref := Port.get_new_port !available_host_ports_ref ;
-      let rest_port = Port.create_rest_port !available_host_ports_ref in
+      let rest_port = PortManager.allocate_port port_manager in
       { name = Block_producer.name ^ "-" ^ name
       ; keypair
       ; libp2p_secret = ""
-      ; ports = [ ("rest-port", rest_port) ]
+      ; rest_port
       }
     in
     let block_producer_configs =
@@ -395,14 +414,12 @@ module Network_config = struct
     in
     let archive_node_configs =
       (List.init num_archive_nodes) ~f:(fun index ->
-          available_host_ports_ref :=
-            Port.get_new_port !available_host_ports_ref ;
-          let rest_port = Port.create_rest_port !available_host_ports_ref in
+          let rest_port = PortManager.allocate_port port_manager in
           { name = Archive_node.name ^ "-" ^ Int.to_string (index + 1)
           ; id = Int.to_string index
           ; schema = mina_archive_schema
           ; schema_aux_files = mina_archive_schema_aux_files
-          ; ports = [ ("rest-port", rest_port) ]
+          ; rest_port
           } )
     in
     let genesis_keypairs =
@@ -430,40 +447,29 @@ module Network_config = struct
                 in
                 failwith failstring
           in
-          available_host_ports_ref :=
-            Port.get_new_port !available_host_ports_ref ;
-          let snark_coord_rest_port =
-            Port.create_rest_port !available_host_ports_ref
-          in
           let public_key =
             Public_key.Compressed.to_base58_check
               (Public_key.compress network_kp.keypair.public_key)
           in
           let worker_nodes =
             List.init node.worker_nodes ~f:(fun index ->
-                available_host_ports_ref :=
-                  Port.get_new_port !available_host_ports_ref ;
-                let rest_port =
-                  Port.create_rest_port !available_host_ports_ref
-                in
+                let rest_port = PortManager.allocate_port port_manager in
                 { name = Snark_worker.name ^ "-" ^ Int.to_string (index + 1)
                 ; public_key
-                ; ports = [ ("rest-port", rest_port) ]
+                ; rest_port
                 } )
           in
+          let snark_coord_rest_port = PortManager.allocate_port port_manager in
           Some
             { name = node.node_name
             ; public_key
             ; snark_worker_fee
             ; worker_nodes
-            ; ports = [ ("rest-port", snark_coord_rest_port) ]
+            ; rest_port = snark_coord_rest_port
             }
     in
-    available_host_ports_ref := Port.get_new_port !available_host_ports_ref ;
-    let seed_rest_port = Port.create_rest_port !available_host_ports_ref in
-    let seed_configs =
-      [ { name = Seed.name; ports = [ ("rest-port", seed_rest_port) ] } ]
-    in
+    let seed_rest_port = PortManager.allocate_port port_manager in
+    let seed_configs = [ { name = Seed.name; rest_port = seed_rest_port } ] in
     let docker_volume_configs =
       List.map block_producer_configs ~f:(fun config ->
           { name = "sk-" ^ config.name; data = config.keypair.private_key } )
@@ -539,12 +545,6 @@ module Network_config = struct
                 (Block_producer.default
                    ~private_key_config:private_key_config.target ))
           in
-          let rest_port =
-            List.find
-              ~f:(fun ports -> String.equal (fst ports) "rest-port")
-              config.ports
-            |> Option.value_exn |> snd
-          in
           ( config.name
           , { Service.image = network_config.docker.mina_image
             ; volumes =
@@ -553,7 +553,7 @@ module Network_config = struct
                 Cmd.create_cmd cmd ~config_file:runtime_config.target
                   ?docker_dns_name:(Some config.name)
             ; entrypoint = Some Services.Block_producer.entrypoint
-            ; ports = [ rest_port ]
+            ; ports = [ config.rest_port ]
             ; environment = Service.Environment.create Envs.base_node_envs
             ; dns = Service.Dns.default
             ; networks = Service.Network.default
@@ -583,19 +583,13 @@ module Network_config = struct
                  ~snark_coordinator_key:snark_coordinator_config.public_key
                  ~snark_worker_fee:snark_coordinator_config.snark_worker_fee )
           in
-          let rest_port =
-            List.find
-              ~f:(fun ports -> String.equal (fst ports) "rest-port")
-              snark_coordinator_config.ports
-            |> Option.value_exn |> snd
-          in
           let coordinator =
             ( snark_coordinator_config.name
             , { Service.image = network_config.docker.mina_image
               ; volumes = [ runtime_config; entrypoint_script ]
               ; command
               ; entrypoint = Some Services.Snark_coordinator.entrypoint
-              ; ports = [ rest_port ]
+              ; ports = [ snark_coordinator_config.rest_port ]
               ; environment
               ; networks = Service.Network.default
               ; dns = Service.Dns.default
@@ -617,18 +611,12 @@ module Network_config = struct
               in
               let environment = Service.Environment.create [] in
               (* SNARK WORKER KEYPAIR CONFIG DOCKER BIND VOLUME *)
-              let rest_port =
-                List.find
-                  ~f:(fun ports -> String.equal (fst ports) "rest-port")
-                  worker_config.ports
-                |> Option.value_exn |> snd
-              in
               ( worker_config.name
               , { Service.image = network_config.docker.mina_image
                 ; volumes = [ runtime_config; entrypoint_script ]
                 ; command
                 ; entrypoint = Some Services.Snark_worker.entrypoint
-                ; ports = [ rest_port ]
+                ; ports = [ worker_config.rest_port ]
                 ; environment
                 ; networks = Service.Network.default
                 ; dns = Service.Dns.default
@@ -653,12 +641,7 @@ module Network_config = struct
             let server_port = Services.Archive_node.server_port in
             Cmd.(Archive_node { Archive_node.postgres_uri; server_port })
           in
-          let rest_port =
-            List.find
-              ~f:(fun ports -> String.equal (fst ports) "rest-port")
-              config.ports
-            |> Option.value_exn |> snd
-          in
+
           ( config.name
           , { Service.image = network_config.docker.mina_archive_image
             ; volumes = [ runtime_config; entrypoint_script ]
@@ -666,7 +649,7 @@ module Network_config = struct
                 Cmd.create_cmd cmd ~config_file:runtime_config.target
                   ?docker_dns_name:None
             ; entrypoint = Some Services.Archive_node.entrypoint
-            ; ports = [ rest_port ]
+            ; ports = [ config.rest_port ]
             ; environment = Service.Environment.create Envs.base_node_envs
             ; networks = Service.Network.default
             ; dns = Service.Dns.default
@@ -713,18 +696,13 @@ module Network_config = struct
               Cmd.create_cmd Seed ~config_file:runtime_config.target
                 ?docker_dns_name:(Some config.name)
           in
-          let rest_port =
-            List.find
-              ~f:(fun ports -> String.equal (fst ports) "rest-port")
-              config.ports
-            |> Option.value_exn |> snd
-          in
+
           ( Services.Seed.name
           , { Service.image = network_config.docker.mina_image
             ; volumes = [ runtime_config; entrypoint_script ]
             ; command
             ; entrypoint = Some Services.Seed.entrypoint
-            ; ports = [ rest_port ]
+            ; ports = [ config.rest_port ]
             ; environment = Service.Environment.create Envs.base_node_envs
             ; networks = Service.Network.default
             ; dns = Service.Dns.default
@@ -842,7 +820,8 @@ module Network_manager = struct
             Docker_network.Service_to_deploy.construct_service
               network_config.docker.stack_name seed_config.name
               (Docker_network.Service_to_deploy.init_service_to_deploy_config
-                 ~network_keypair:None ~has_archive_container:false )
+                 ~network_keypair:None ~has_archive_container:false
+                 ~graphql_port:seed_config.rest_port )
           in
           (seed_config.name, node) )
       |> Core.String.Map.of_alist_exn
@@ -854,7 +833,7 @@ module Network_manager = struct
               network_config.docker.stack_name bp_config.name
               (Docker_network.Service_to_deploy.init_service_to_deploy_config
                  ~network_keypair:(Some bp_config.keypair)
-                 ~has_archive_container:false )
+                 ~has_archive_container:false ~graphql_port:bp_config.rest_port )
           in
           (bp_config.name, node) )
       |> Core.String.Map.of_alist_exn
@@ -869,7 +848,8 @@ module Network_manager = struct
                   network_config.docker.stack_name snark_coordinator_config.name
                   (Docker_network.Service_to_deploy
                    .init_service_to_deploy_config ~network_keypair:None
-                     ~has_archive_container:false )
+                     ~has_archive_container:false
+                     ~graphql_port:snark_coordinator_config.rest_port )
               in
               [ (snark_coordinator_config.name, coordinator) ]
               |> Core.String.Map.of_alist_exn
@@ -883,8 +863,10 @@ module Network_manager = struct
                     network_config.docker.stack_name snark_worker_config.name
                     (Docker_network.Service_to_deploy
                      .init_service_to_deploy_config ~network_keypair:None
-                       ~has_archive_container:false )
+                       ~has_archive_container:false
+                       ~graphql_port:snark_worker_config.rest_port )
                 in
+
                 (snark_worker_config.name, worker) )
             |> Core.String.Map.of_alist_exn
           in
@@ -899,7 +881,8 @@ module Network_manager = struct
             Docker_network.Service_to_deploy.construct_service
               network_config.docker.stack_name archive_config.name
               (Docker_network.Service_to_deploy.init_service_to_deploy_config
-                 ~network_keypair:None ~has_archive_container:true )
+                 ~network_keypair:None ~has_archive_container:true
+                 ~graphql_port:archive_config.rest_port )
           in
           (archive_config.name, node) )
       |> Core.String.Map.of_alist_exn
