@@ -3,12 +3,9 @@ let Prelude = ../../External/Prelude.dhall
 let Cmd = ../../Lib/Cmds.dhall
 let S = ../../Lib/SelectFiles.dhall
 let D = S.PathPattern
-
+let JobSpec = ../../Pipeline/JobSpec.dhall
 let Pipeline = ../../Pipeline/Dsl.dhall
 let PipelineTag = ../../Pipeline/Tag.dhall
-
-let JobSpec = ../../Pipeline/JobSpec.dhall
-
 let Command = ../../Command/Base.dhall
 let RunInToolchain = ../../Command/RunInToolchain.dhall
 let Docker = ../../Command/Docker/Type.dhall
@@ -21,11 +18,14 @@ let dependsOn = DebianVersions.dependsOn DebianVersions.DebVersion.Bullseye Prof
 
 
 let buildTestCmd : Size -> Command.Type = \(cmd_target : Size) ->
-  let key = "single-node-tests" in
+  let key = "hardfork-tests" in
   Command.build
     Command.Config::{
-      commands = RunInToolchain.runInToolchain ["DUNE_INSTRUMENT_WITH=bisect_ppx", "COVERALLS_TOKEN"] "buildkite/scripts/single-node-tests.sh && buildkite/scripts/upload-partial-coverage-data.sh ${key}",
-      label = "single-node-tests",
+      commands = [
+        Cmd.run "buildkite/scripts/hardfork-tests.sh",
+        Cmd.run "buildkite/scripts/upload-partial-coverage-data.sh ${key}"
+      ],
+      label = "hardfork-tests",
       key = key,
       target = cmd_target,
       docker = None Docker.Type,
@@ -41,8 +41,8 @@ Pipeline.build
         S.strictlyStart (S.contains "src/lib"),
         S.strictlyStart (S.contains "src/test"),
         S.strictly (S.contains "Makefile"),
-        S.exactly "buildkite/src/Jobs/Test/SingleNodeTest" "dhall",
-        S.exactly "buildkite/scripts/single-node-tests" "sh"
+        S.exactly "buildkite/src/Jobs/Test/HardforkTest" "dhall",
+        S.exactly "buildkite/scripts/hardfork-tests" "sh"
       ]
 
       in
@@ -50,7 +50,7 @@ Pipeline.build
       JobSpec::{
         dirtyWhen = unitDirtyWhen,
         path = "Test",
-        name = "SingleNodeTest",
+        name = "HardforkTest",
         tags = [ PipelineTag.Type.Long, PipelineTag.Type.Test ]
       },
     steps = [

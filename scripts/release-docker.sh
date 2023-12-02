@@ -10,7 +10,7 @@ set +x
 CLEAR='\033[0m'
 RED='\033[0;31m'
 # Array of valid service names
-VALID_SERVICES=('mina-archive', 'mina-daemon' 'mina-rosetta' 'mina-test-executive' 'mina-batch-txn' 'mina-zkapp-test-transaction' 'mina-toolchain' 'bot' 'leaderboard' 'delegation-backend' 'delegation-backend-toolchain' 'itn-orchestrator')
+VALID_SERVICES=('mina-archive' 'mina-daemon' 'mina-rosetta' 'mina-test-executive' 'mina-test-suite' 'mina-batch-txn' 'mina-zkapp-test-transaction' 'mina-toolchain' 'bot' 'leaderboard' 'delegation-backend' 'delegation-backend-toolchain' 'itn-orchestrator')
 
 function usage() {
   if [[ -n "$1" ]]; then
@@ -92,6 +92,10 @@ bot)
   DOCKERFILE_PATH="frontend/bot/Dockerfile"
   DOCKER_CONTEXT="frontend/bot"
   ;;
+bot)
+  DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-test-suite"
+  DOCKER_CONTEXT="dockerfiles/"
+  ;;
 mina-daemon)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-daemon"
   DOCKER_CONTEXT="dockerfiles/"
@@ -133,9 +137,11 @@ itn-orchestrator)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-itn-orchestrator"
   DOCKER_CONTEXT="src/app/itn_orchestrator"
   ;;
-
+mina-test-suite)
+  DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-test-suite"
+  DOCKER_CONTEXT="dockerfiles/"
+  ;;
 esac
-
 
 REPO="--build-arg MINA_REPO=${BUILDKITE_PULL_REQUEST_REPO}"
 if [[ -z "${BUILDKITE_PULL_REQUEST_REPO}" ]]; then

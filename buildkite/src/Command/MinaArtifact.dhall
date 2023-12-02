@@ -128,7 +128,20 @@ let pipeline : DebianVersions.DebVersion -> Profiles.Type ->  PipelineMode.Type 
 
         in
 
-        DockerImage.generateStep zkappTestTxnSpec
+        DockerImage.generateStep zkappTestTxnSpec,
+
+        -- test suite image
+        let testSuiteSpec = DockerImage.ReleaseSpec::{
+          deps=DebianVersions.dependsOn spec.debVersion spec.profile,
+          service="mina-test-suite",
+          deb_codename="${DebianVersions.lowerName spec.debVersion}",
+          step_key="test-suite-${DebianVersions.lowerName spec.debVersion}${Profiles.toLabelSegment spec.profile}${spec.stepSuffix}-docker-image",
+          `if`=Some "'${Profiles.lowerName spec.profile}' == 'standard' && '${Prelude.Bool.show spec.buildOnlyEssentialDockers}' == 'False'"
+        }
+
+        in
+
+        DockerImage.generateStep testSuiteSpec
 
       ]
     }

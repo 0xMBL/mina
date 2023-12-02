@@ -614,7 +614,8 @@ let write_replayer_checkpoint ~logger ~ledger ~last_global_slot_since_genesis
       input_to_yojson input |> Yojson.Safe.pretty_to_string
     in
     let checkpoint_file =
-      sprintf "replayer-checkpoint-%Ld.json" start_slot_since_genesis
+      sprintf "berkeley-account-tables-checkpoint-%Ld.json"
+        start_slot_since_genesis
     in
     [%log info] "Writing checkpoint file"
       ~metadata:[ ("checkpoint_file", `String checkpoint_file) ] ;

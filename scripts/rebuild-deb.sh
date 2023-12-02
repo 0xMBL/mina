@@ -134,6 +134,8 @@ copy_common_daemon_configs() {
   cp ./default/src/app/runtime_genesis_ledger/runtime_genesis_ledger.exe "${BUILDDIR}/usr/local/bin/mina-create-genesis"
   cp ./default/src/app/generate_keypair/generate_keypair.exe "${BUILDDIR}/usr/local/bin/mina-generate-keypair"
   cp ./default/src/app/validate_keypair/validate_keypair.exe "${BUILDDIR}/usr/local/bin/mina-validate-keypair"
+  cp ./default/src/app/berkeley_migration/berkeley_migration.exe "${BUILD_DIR}/usr/local/bin/mina-berkeley-migration"
+
 
   # Copy signature-based Binaries (based on signature type $2 passed into the function)
   cp ./default/src/app/cli/src/mina_${2}_signatures.exe "${BUILDDIR}/usr/local/bin/mina"
@@ -244,10 +246,21 @@ build_deb mina-batch-txn
 
 ##################################### GENERATE TEST SUITE PACKAGE #######################################
 
+create_control_file mina-test-suite "${SHARED_DEPS}${DAEMON_DEPS}" 'Test suite apps for mina.'
 
-create_control_file mina-test-suite "${SHARED_DEPS}" 'Test suite apps for mina.'
+mkdir -p "${BUILDDIR}/etc/mina/test/genesis_ledgers"
+mkdir -p "${BUILDDIR}/usr/local/bin"
+mkdir -p "${BUILDDIR}/etc/mina/test/hardfork/dummy_mainnet_data"
+mkdir -p "${BUILDDIR}/etc/mina/test/hardfork_tests"
+
+cp ../genesis_ledgers/mainnet.json "${BUILDDIR}/etc/mina/test/genesis_ledgers/mainnet.json"
+cp ../src/test/hardfork/dummy_mainnet_data/dump.sql "${BUILDDIR}/etc/mina/test/hardfork/dummy_mainnet_data/dump.sql"
+cp ../src/test/hardfork/dummy_mainnet_data/random_data.tar.xz "${BUILDDIR}/etc/mina/test/hardfork/dummy_mainnet_data/random_data.tar.xz"
+cp ../src/test/hardfork/hardfork_tests/ci.json "${BUILDDIR}/etc/mina/test/hardfork_tests/ci.json"
 
 # Binaries
+cp ./default/src/test/hardfork/berkeley_migration_data_verifier/berkeley_migration_data_verifier.exe "${BUILDDIR}/usr/local/bin/mina-berkeley-migration-data-verifier"
+cp ./default/src/test/hardfork/hardfork_tests/hardfork_tests.exe "${BUILDDIR}/usr/local/bin/mina-hardfork-tests"
 cp ./default/src/test/command_line_tests/command_line_tests.exe "${BUILDDIR}/usr/local/bin/mina-command-line-tests"
 
 build_deb mina-test-suite
