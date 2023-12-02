@@ -132,11 +132,11 @@ let pipeline : DebianVersions.DebVersion -> Profiles.Type ->  PipelineMode.Type 
 
         -- test suite image
         let testSuiteSpec = DockerImage.ReleaseSpec::{
-          deps=DebianVersions.dependsOn spec.debVersion spec.profile,
+          deps=DebianVersions.dependsOn debVersion profile,
           service="mina-test-suite",
-          deb_codename="${DebianVersions.lowerName spec.debVersion}",
-          step_key="test-suite-${DebianVersions.lowerName spec.debVersion}${Profiles.toLabelSegment spec.profile}${spec.stepSuffix}-docker-image",
-          `if`=Some "'${Profiles.lowerName spec.profile}' == 'standard' && '${Prelude.Bool.show spec.buildOnlyEssentialDockers}' == 'False'"
+          deb_codename="${DebianVersions.lowerName debVersion}",
+          step_key="test-suite-${DebianVersions.lowerName debVersion}${Profiles.toLabelSegment profile}-docker-image",
+          `if`=Some "'${Profiles.lowerName profile}' == 'standard'"
         }
 
         in
