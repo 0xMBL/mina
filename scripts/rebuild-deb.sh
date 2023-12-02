@@ -134,7 +134,7 @@ copy_common_daemon_configs() {
   cp ./default/src/app/runtime_genesis_ledger/runtime_genesis_ledger.exe "${BUILDDIR}/usr/local/bin/mina-create-genesis"
   cp ./default/src/app/generate_keypair/generate_keypair.exe "${BUILDDIR}/usr/local/bin/mina-generate-keypair"
   cp ./default/src/app/validate_keypair/validate_keypair.exe "${BUILDDIR}/usr/local/bin/mina-validate-keypair"
-  cp ./default/src/app/berkeley_migration/berkeley_migration.exe "${BUILD_DIR}/usr/local/bin/mina-berkeley-migration"
+  cp ./default/src/app/berkeley_migration/berkeley_migration.exe "${BUILDDIR}/usr/local/bin/mina-berkeley-migration"
 
 
   # Copy signature-based Binaries (based on signature type $2 passed into the function)

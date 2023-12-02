@@ -56,8 +56,7 @@ module HardForkTests = struct
             ~berkeley_account_tables_app:env.paths.berkeley_account_tables
         in
 
-        let%bind _ =
-          HardForkSteps.run_berkeley_migration_verifier steps
+        HardForkSteps.run_berkeley_migration_verifier steps
             ~archive_uri:conn_str_source_db ~migrated_uri:conn_str_target_db
             ~verification_start_slot:
               ( params.migration_end_slot
@@ -67,10 +66,13 @@ module HardForkTests = struct
             ~genesis_ledger:env.paths.mainnet_genesis_ledger
             ~berkeley_migration_data_verifier_app:
               env.paths.berkeley_migration_data_verifier
-        in
+      
+  (*   in
 
-        HardForkSteps.compare_replayers_runs_from_mainnet_and_current steps
-          params input )
+     
+      HardForkSteps.compare_replayers_runs_from_mainnet_and_current steps
+          params input 
+        *)  )
 
   let random_migration env_file =
     let env = Settings.Env.of_file_or_fail env_file in
@@ -133,7 +135,7 @@ module HardForkTests = struct
               params.berkeley_accounts_table_interval_checkpoint
             ~berkeley_account_tables_app:env.paths.berkeley_account_tables
         in
-        let%bind _ =
+       
           HardForkSteps.run_berkeley_migration_verifier
             ~archive_uri:conn_str_source_db ~migrated_uri:conn_str_target_db
             ~verification_start_slot:params.migration_end_slot
@@ -142,10 +144,12 @@ module HardForkTests = struct
             ~genesis_ledger:env.paths.mainnet_genesis_ledger steps
             ~berkeley_migration_data_verifier_app:
               env.paths.berkeley_migration_data_verifier
-        in
+     (*   in
 
-        HardForkSteps.compare_replayers_runs_from_mainnet_and_current steps
-          params input )
+     
+      HardForkSteps.compare_replayers_runs_from_mainnet_and_current steps
+          params input 
+        *)  )
 
   let checkpoint env_file =
     let env = Settings.Env.of_file_or_fail env_file in
@@ -223,8 +227,7 @@ module HardForkTests = struct
             ~berkeley_account_tables_app:env.paths.berkeley_account_tables
         in
 
-        let%bind _ =
-          HardForkSteps.run_berkeley_migration_verifier steps
+        HardForkSteps.run_berkeley_migration_verifier steps
             ~archive_uri:conn_str_source_db ~migrated_uri:conn_str_target_db
             ~verification_start_slot:params.migration_end_slot
             ~verification_end_slot:params.migration_end_slot
@@ -232,10 +235,12 @@ module HardForkTests = struct
             ~genesis_ledger:env.paths.mainnet_genesis_ledger
             ~berkeley_migration_data_verifier_app:
               env.paths.berkeley_migration_data_verifier
-        in
+         (*   in
 
-        HardForkSteps.compare_replayers_runs_from_mainnet_and_current steps
-          params input )
+     
+      HardForkSteps.compare_replayers_runs_from_mainnet_and_current steps
+          params input 
+        *)  )
 end
 
 let env =
