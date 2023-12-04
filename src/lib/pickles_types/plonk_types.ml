@@ -1289,7 +1289,7 @@ module Poly_comm = struct
     [%%versioned
     module Stable = struct
       module V1 = struct
-        type 'g_opt t = { unshifted : 'g_opt array; shifted : 'g_opt }
+        type 'g_opt t = { elems : 'g_opt array }
         [@@deriving sexp, compare, yojson, hlist, hash, equal]
       end
     end]

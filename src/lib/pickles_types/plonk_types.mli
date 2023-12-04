@@ -104,7 +104,7 @@ module Poly_comm : sig
   end
 
   module With_degree_bound : sig
-    type 'a t = { unshifted : 'a array; shifted : 'a }
+    type 'a t = { elems : 'a array }
   end
 end
 
