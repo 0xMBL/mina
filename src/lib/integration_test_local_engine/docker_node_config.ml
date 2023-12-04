@@ -1,22 +1,436 @@
-open Base
+open Core_kernel
+open Async
+open Integration_test_lib
+open Docker_compose
 
-module Envs = struct
-  let base_node_envs =
-    [ ("DAEMON_REST_PORT", "3085")
-    ; ("DAEMON_CLIENT_PORT", "8301")
-    ; ("DAEMON_METRICS_PORT", "10001")
-    ; ("MINA_PRIVKEY_PASS", "naughty blue worm")
-    ; ("MINA_LIBP2P_PASS", "")
+module PortManager = struct
+  type t =
+    { mutable available_ports : int list
+    ; mutable used_ports : int list
+    ; min_port : int
+    ; max_port : int
+    }
+
+  let create ~min_port ~max_port =
+    let available_ports = List.range min_port max_port in
+    { available_ports; used_ports = []; min_port; max_port }
+
+  let allocate_port t =
+    match t.available_ports with
+    | [] ->
+        failwith "No available ports"
+    | port :: rest ->
+        t.available_ports <- rest ;
+        t.used_ports <- port :: t.used_ports ;
+        port
+
+  let allocate_ports_for_node t =
+    let rest_port_source = allocate_port t in
+    let client_port_source = allocate_port t in
+    let metrics_port_source = allocate_port t in
+    let rest_port_target = 3085 in
+    let client_port_target = 8301 in
+    let metrics_port_target = 10001 in
+    [ { Dockerfile.Service.Port.published = rest_port_source
+      ; target = rest_port_target
+      }
+    ; { published = client_port_source; target = client_port_target }
+    ; { published = metrics_port_source; target = metrics_port_target }
     ]
 
-  let snark_coord_envs ~snark_coordinator_key ~snark_worker_fee =
+  let release_port t port =
+    t.used_ports <- List.filter t.used_ports ~f:(fun p -> p <> port) ;
+    t.available_ports <- port :: t.available_ports
+
+  let get_latest_used_port t =
+    match t.used_ports with [] -> failwith "No used ports" | port :: _ -> port
+end
+
+module Base_node_config = struct
+  type base_config =
+    { peer : string option
+    ; log_level : string
+    ; log_snark_work_gossip : bool
+    ; log_txn_pool_gossip : bool
+    ; generate_genesis_proof : bool
+    ; client_port : string
+    ; rest_port : string
+    ; metrics_port : string
+    ; config_file : string
+    ; libp2p_key_path : string
+    }
+  [@@deriving to_yojson]
+
+  let create_peer ~dns_name =
+    Printf.sprintf
+      "/dns4/%s/tcp/10101/p2p/12D3KooWCoGWacXE4FRwAX8VqhnWVKhz5TTEecWEuGmiNrDt2XLf"
+      dns_name
+
+  let default ~config_file ?dns_name =
+    let peer_option =
+      match dns_name with
+      | Some name ->
+          Some (create_peer ~dns_name:name)
+      | None ->
+          None
+    in
+    { log_snark_work_gossip = true
+    ; log_txn_pool_gossip = true
+    ; generate_genesis_proof = true
+    ; log_level = "Debug"
+    ; client_port = "8301"
+    ; rest_port = "3085"
+    ; metrics_port = "10001"
+    ; config_file
+    ; libp2p_key_path = "/root/keys/libp2p_key"
+    ; peer = peer_option
+    }
+
+  let to_list t =
+    let base_args =
+      [ "-config-file"
+      ; t.config_file
+      ; "-log-level"
+      ; t.log_level
+      ; "-log-snark-work-gossip"
+      ; Bool.to_string t.log_snark_work_gossip
+      ; "-log-txn-pool-gossip"
+      ; Bool.to_string t.log_txn_pool_gossip
+      ; "-generate-genesis-proof"
+      ; Bool.to_string t.generate_genesis_proof
+      ; "-client-port"
+      ; t.client_port
+      ; "-rest-port"
+      ; t.rest_port
+      ; "-metrics-port"
+      ; t.metrics_port
+      ; "--libp2p-keypair"
+      ; t.libp2p_key_path
+      ; "-log-json"
+      ; "--insecure-rest-server"
+      ]
+    in
+    let peer_args =
+      match t.peer with Some peer -> [ "-peer"; peer ] | None -> []
+    in
+    List.concat [ base_args; peer_args ]
+end
+
+module type Node_config_intf = sig
+  open Dockerfile.Service
+
+  type t [@@deriving to_yojson]
+
+  type base_config [@@deriving to_yojson]
+
+  type specific_config [@@deriving to_yojson]
+
+  val create_specific_command : specific_config -> string list
+
+  val create_cmd : base_config -> specific_config -> string list
+
+  val create_docker_config :
+       image:string
+    -> entrypoint:string list option
+    -> networks:Network.t list
+    -> ports:Port.t list
+    -> volumes:Volume.t list
+    -> environment:Environment.t
+    -> base_config:base_config
+    -> specific_config:specific_config
+    -> Dockerfile.Service.t
+end
+
+module Block_producer_config = struct
+  type specific_config =
+    { keypair : Network_keypair.t
+    ; priv_key_path : string
+    ; libp2p_secret : string
+    ; enable_flooding : bool
+    ; enable_peer_exchange : bool
+    }
+  [@@deriving to_yojson]
+
+  type base_config = Base_node_config.base_config [@@deriving to_yojson]
+
+  type t =
+    { service_name : string
+    ; base_config : base_config
+    ; specific_config : specific_config
+    ; docker_config : Dockerfile.Service.t
+    }
+  [@@deriving to_yojson]
+
+  let create_specific_command specific_config =
+    [ "daemon"
+    ; "-block-producer-key"
+    ; specific_config.priv_key_path
+    ; "-enable-flooding"
+    ; specific_config.enable_flooding |> Bool.to_string
+    ; "-enable-peer-exchange"
+    ; specific_config.enable_peer_exchange |> Bool.to_string
+    ]
+
+  let create_cmd base_config specific_config =
+    let base_args = Base_node_config.to_list base_config in
+    let block_producer_args = create_specific_command specific_config in
+    List.concat [ block_producer_args; base_args ]
+
+  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
+      ~environment ~base_config ~specific_config =
+    let command = create_cmd base_config specific_config in
+    let docker_config : Dockerfile.Service.t =
+      { image
+      ; command
+      ; entrypoint
+      ; ports
+      ; environment
+      ; volumes
+      ; networks
+      ; dns = Dockerfile.Service.Dns.default
+      }
+    in
+    docker_config
+
+  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
+      ~keypair ~libp2p_secret =
+    let service_name = stack_name ^ "_" ^ name in
+    (* TODO: make this better *)
+    let priv_key_path = "/root/keys/" ^ name in
+    let base_config =
+      Base_node_config.default ~config_file ~dns_name:service_name
+    in
+    let specific_config =
+      { keypair
+      ; priv_key_path
+      ; libp2p_secret
+      ; enable_flooding = true
+      ; enable_peer_exchange = true
+      }
+    in
+    let entrypoint = Some [ "/root/entrypoint.sh" ] in
+    let docker_config =
+      create_docker_config ~image ~ports ~networks ~volumes
+        ~environment:Dockerfile.Service.Environment.default ~entrypoint
+        ~base_config ~specific_config
+    in
+    { service_name = name; base_config; specific_config; docker_config }
+end
+
+module Seed_config = struct
+  type specific_config = unit [@@deriving to_yojson]
+
+  type base_config = Base_node_config.base_config [@@deriving to_yojson]
+
+  type t =
+    { service_name : string
+    ; base_config : base_config
+    ; specific_config : specific_config
+    ; docker_config : Dockerfile.Service.t
+    }
+  [@@deriving to_yojson]
+
+  let create_specific_command () = [ "daemon"; "-seed" ]
+
+  let create_cmd base_config specific_config =
+    let base_args = Base_node_config.to_list base_config in
+    let seed_args = create_specific_command specific_config in
+    List.concat [ seed_args; base_args ]
+
+  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
+      ~environment ~base_config ~specific_config =
+    let command = create_cmd base_config specific_config in
+    let docker_config : Dockerfile.Service.t =
+      { image
+      ; command
+      ; entrypoint
+      ; ports
+      ; environment
+      ; volumes
+      ; networks
+      ; dns = Dockerfile.Service.Dns.default
+      }
+    in
+    docker_config
+
+  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file =
+    let service_name = stack_name ^ "_" ^ name in
+    let base_config =
+      Base_node_config.default ~config_file ~dns_name:service_name
+    in
+    let entrypoint = Some [ "/root/entrypoint.sh" ] in
+    let docker_config =
+      create_docker_config ~image ~ports ~networks ~volumes
+        ~environment:Dockerfile.Service.Environment.default ~entrypoint
+        ~base_config ~specific_config:()
+    in
+    { service_name = name; base_config; specific_config = (); docker_config }
+end
+
+module Snark_worker_config = struct
+  type specific_config =
+    { daemon_address : string; daemon_port : string; proof_level : string }
+  [@@deriving to_yojson]
+
+  type base_config = Base_node_config.base_config [@@deriving to_yojson]
+
+  type t =
+    { service_name : string
+    ; base_config : base_config
+    ; specific_config : specific_config
+    ; docker_config : Dockerfile.Service.t
+    }
+  [@@deriving to_yojson]
+
+  let create_specific_command specific_config =
+    [ "internal"
+    ; "snark-worker"
+    ; "-proof-level"
+    ; specific_config.proof_level
+    ; "-daemon-address"
+    ; specific_config.daemon_address ^ ":" ^ specific_config.daemon_port
+    ]
+
+  let create_cmd base_config specific_config =
+    let base_args = Base_node_config.to_list base_config in
+    let snark_worker_args = create_specific_command specific_config in
+    List.concat [ snark_worker_args; base_args ]
+
+  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
+      ~environment ~base_config ~specific_config =
+    let command = create_cmd base_config specific_config in
+    let docker_config : Dockerfile.Service.t =
+      { image
+      ; command
+      ; entrypoint
+      ; ports
+      ; environment
+      ; volumes
+      ; networks
+      ; dns = Dockerfile.Service.Dns.default
+      }
+    in
+    docker_config
+
+  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
+      ~daemon_address ~daemon_port =
+    let service_name = stack_name ^ "_" ^ name in
+    let base_config =
+      Base_node_config.default ~config_file ~dns_name:service_name
+    in
+    let specific_config =
+      { daemon_address; daemon_port; proof_level = "Full" }
+    in
+    let entrypoint = Some [ "/root/entrypoint.sh" ] in
+    let docker_config =
+      create_docker_config ~image ~ports ~networks ~volumes
+        ~environment:Dockerfile.Service.Environment.default ~entrypoint
+        ~base_config ~specific_config
+    in
+    { service_name = name; base_config; specific_config; docker_config }
+end
+
+module Snark_coordinator_config = struct
+  type specific_config =
+    { snark_coordinator_key : string
+    ; snark_worker_fee : string
+    ; work_selection : string
+    ; worker_nodes : Snark_worker_config.t list
+    }
+  [@@deriving to_yojson]
+
+  type base_config = Base_node_config.base_config [@@deriving to_yojson]
+
+  type t =
+    { service_name : string
+    ; base_config : base_config
+    ; specific_config : specific_config
+    ; docker_config : Dockerfile.Service.t
+    }
+  [@@deriving to_yojson]
+
+  let create_specific_command specific_config =
+    [ "daemon"
+    ; "-run-snark-coordinator"
+    ; specific_config.snark_coordinator_key
+    ; "-snark-worker-fee"
+    ; specific_config.snark_worker_fee
+    ; "-work-selection"
+    ; specific_config.work_selection
+    ]
+
+  let snark_coordinator_default_env ~snark_coordinator_key ~snark_worker_fee =
     [ ("MINA_SNARK_KEY", snark_coordinator_key)
     ; ("MINA_SNARK_FEE", snark_worker_fee)
     ; ("WORK_SELECTION", "seq")
     ]
-    @ base_node_envs
 
-  let postgres_envs ~username ~password ~database ~port =
+  let create_cmd base_config specific_config =
+    let base_args = Base_node_config.to_list base_config in
+    let snark_coordinator_args = create_specific_command specific_config in
+    List.concat [ snark_coordinator_args; base_args ]
+
+  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
+      ~environment ~base_config ~specific_config =
+    let command = create_cmd base_config specific_config in
+    let docker_config : Dockerfile.Service.t =
+      { image
+      ; command
+      ; entrypoint
+      ; ports
+      ; environment
+      ; volumes
+      ; networks
+      ; dns = Dockerfile.Service.Dns.default
+      }
+    in
+    docker_config
+
+  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
+      ~snark_coordinator_key ~snark_worker_fee ~worker_nodes =
+    let service_name = stack_name ^ "_" ^ name in
+    let base_config =
+      Base_node_config.default ~config_file ~dns_name:service_name
+    in
+    let specific_config =
+      { snark_coordinator_key
+      ; snark_worker_fee
+      ; work_selection = "seq"
+      ; worker_nodes
+      }
+    in
+    let entrypoint = Some [ "/root/entrypoint.sh" ] in
+    let environment =
+      snark_coordinator_default_env ~snark_coordinator_key ~snark_worker_fee
+    in
+    let docker_config =
+      create_docker_config ~image ~ports ~networks ~volumes ~environment
+        ~entrypoint ~base_config ~specific_config
+    in
+    { service_name = name; base_config; specific_config; docker_config }
+end
+
+module Postgres_config = struct
+  type specific_config =
+    { host : string
+    ; username : string
+    ; password : string
+    ; database : string
+    ; port : int
+    }
+  [@@deriving to_yojson]
+
+  type base_config = unit [@@deriving to_yojson]
+
+  type t =
+    { service_name : string
+    ; base_config : base_config
+    ; specific_config : specific_config
+    ; docker_config : Dockerfile.Service.t
+    }
+  [@@deriving to_yojson]
+
+  let postgres_default_envs ~username ~password ~database ~port =
     [ ("BITNAMI_DEBUG", "false")
     ; ("POSTGRES_USER", username)
     ; ("POSTGRES_PASSWORD", password)
@@ -32,317 +446,129 @@ module Envs = struct
     ; ("POSTGRESQL_SHARED_PRELOAD_LIBRARIES", "pgaudit")
     ; ("POSTGRES_HOST_AUTH_METHOD", "trust")
     ]
+
+  let create_connection_uri { host; username; password; database; port } =
+    Printf.sprintf "postgres://%s:%s@%s:%s/%s" username password host
+      (Int.to_string port) database
+
+  let create_specific_command _specific_config = []
+
+  let create_cmd base_config specific_config =
+    let base_args = match base_config with () -> [] in
+    let archive_node_args = create_specific_command specific_config in
+    List.concat [ archive_node_args; base_args ]
+
+  let create_connection_info ~host ~username ~password ~database ~port =
+    { host; username; password; database; port }
+
+  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
+      ~environment ~base_config ~specific_config =
+    let command = create_cmd base_config specific_config in
+    let docker_config : Dockerfile.Service.t =
+      { image
+      ; command
+      ; entrypoint
+      ; ports
+      ; environment
+      ; volumes
+      ; networks
+      ; dns = Dockerfile.Service.Dns.default
+      }
+    in
+    docker_config
+
+  (**
+    (* Mount the archive schema on the /docker-entrypoint-initdb.d postgres entrypoint *)
+            let archive_config =
+              Service.Volume.create mina_create_schema
+                (Services.Archive_node.entrypoint_target ^/ mina_create_schema)
+            in    
+    **)
+  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~connection_info
+      =
+    let _service_name = stack_name ^ "_" ^ name in
+    let base_config = () in
+    let entrypoint = None in
+    let environment =
+      postgres_default_envs ~username:connection_info.username
+        ~password:connection_info.password ~database:connection_info.database
+        ~port:(Int.to_string connection_info.port)
+    in
+    let docker_config =
+      create_docker_config ~image ~ports ~networks ~volumes ~environment
+        ~entrypoint ~base_config ~specific_config:connection_info
+    in
+    { service_name = name
+    ; base_config
+    ; specific_config = connection_info
+    ; docker_config
+    }
 end
 
-module Volumes = struct
-  module Runtime_config = struct
-    let name = "runtime_config"
+module Archive_node_config = struct
+  type specific_config =
+    { server_port : int
+    ; schema : string
+    ; schema_aux_files : string list
+    ; postgres_uri : string
+    ; postgres_config : Postgres_config.t
+    }
+  [@@deriving to_yojson]
 
-    let container_mount_target = "/root/" ^ name
-  end
-end
-
-module Cmd = struct
-  module Cli_args = struct
-    module Log_level = struct
-      type t = Debug
-
-      let to_string t = match t with Debug -> "Debug"
-    end
-
-    module Peer = struct
-      type t = string
-
-      let default ~dns_name =
-        Printf.sprintf
-          "/dns4/%s/tcp/10101/p2p/12D3KooWCoGWacXE4FRwAX8VqhnWVKhz5TTEecWEuGmiNrDt2XLf"
-          dns_name
-    end
-
-    module Postgres_uri = struct
-      type t =
-        { username : string
-        ; password : string
-        ; host : string
-        ; port : string
-        ; db : string
-        }
-
-      let create ~host =
-        { username = "postgres"
-        ; password = "password"
-        ; host
-        ; port = "5432"
-        ; db = "archive"
-        }
-
-      (* Hostname should be dynamic based on the container ID in runtime. Ignore this field for default binding *)
-      let default =
-        { username = "postgres"
-        ; password = "password"
-        ; host = ""
-        ; port = "5432"
-        ; db = "archive"
-        }
-
-      let to_string t =
-        Printf.sprintf "postgres://%s:%s@%s:%s/%s" t.username t.password t.host
-          t.port t.db
-    end
-
-    module Proof_level = struct
-      type t = Full
-
-      let to_string t = match t with Full -> "Full"
-    end
-  end
-
-  open Cli_args
-
-  module Base = struct
-    type t =
-      { peer : Peer.t option
-      ; log_level : Log_level.t
-      ; log_snark_work_gossip : bool
-      ; log_txn_pool_gossip : bool
-      ; generate_genesis_proof : bool
-      ; client_port : string
-      ; rest_port : string
-      ; metrics_port : string
-      ; config_file : string
-      ; libp2p_key_path : string
-      }
-
-    let default ~config_file ?dns_name =
-      let peer_option =
-        match dns_name with
-        | Some name ->
-            Some (Peer.default ~dns_name:name)
-        | None ->
-            None
-      in
-      { peer = peer_option
-      ; log_level = Log_level.Debug
-      ; log_snark_work_gossip = true
-      ; log_txn_pool_gossip = true
-      ; generate_genesis_proof = true
-      ; client_port = "8301"
-      ; rest_port = "3085"
-      ; metrics_port = "10001"
-      ; config_file
-      ; libp2p_key_path = "/root/libp2p-keys/key"
-      }
-
-    let to_list t =
-      let base_args =
-        [ "-config-file"
-        ; t.config_file
-        ; "-log-level"
-        ; Log_level.to_string t.log_level
-        ; "-log-snark-work-gossip"
-        ; Bool.to_string t.log_snark_work_gossip
-        ; "-log-txn-pool-gossip"
-        ; Bool.to_string t.log_txn_pool_gossip
-        ; "-generate-genesis-proof"
-        ; Bool.to_string t.generate_genesis_proof
-        ; "-client-port"
-        ; t.client_port
-        ; "-rest-port"
-        ; t.rest_port
-        ; "-metrics-port"
-        ; t.metrics_port
-        ; "--libp2p-keypair"
-        ; t.libp2p_key_path
-        ; "-log-json"
-        ; "--insecure-rest-server"
-        ]
-      in
-      let peer_args =
-        match t.peer with Some peer -> [ "-peer"; peer ] | None -> []
-      in
-      List.concat [ base_args; peer_args ]
-
-    let default_cmd ~config_file ?dns_name =
-      default ~config_file ?dns_name |> to_list
-  end
-
-  module Seed = struct
-    let cmd = [ "daemon"; "-seed" ]
-
-    let connect_to_archive ~archive_node = [ "-archive-address"; archive_node ]
-  end
-
-  module Block_producer = struct
-    type t =
-      { block_producer_key : string
-      ; enable_flooding : bool
-      ; enable_peer_exchange : bool
-      }
-
-    let default ~private_key_config =
-      { block_producer_key = private_key_config
-      ; enable_flooding = true
-      ; enable_peer_exchange = true
-      }
-
-    let cmd t =
-      [ "daemon"
-      ; "-block-producer-key"
-      ; t.block_producer_key
-      ; "-enable-flooding"
-      ; Bool.to_string t.enable_flooding
-      ; "-enable-peer-exchange"
-      ; Bool.to_string t.enable_peer_exchange
-      ]
-  end
-
-  module Snark_coordinator = struct
-    type t =
-      { snark_coordinator_key : string
-      ; snark_worker_fee : string
-      ; work_selection : string
-      }
-
-    let default ~snark_coordinator_key ~snark_worker_fee =
-      { snark_coordinator_key; snark_worker_fee; work_selection = "seq" }
-
-    let cmd t ~config_file =
-      [ "daemon"
-      ; "-run-snark-coordinator"
-      ; t.snark_coordinator_key
-      ; "-snark-worker-fee"
-      ; t.snark_worker_fee
-      ; "-work-selection"
-      ; t.work_selection
-      ]
-      @ Base.default_cmd ~config_file ?dns_name:None
-  end
-
-  module Snark_worker = struct
-    let name = "snark-worker"
-
-    type t =
-      { daemon_address : string
-      ; daemon_port : string
-      ; proof_level : Proof_level.t
-      }
-
-    let default ~daemon_address ~daemon_port =
-      { daemon_address; daemon_port; proof_level = Proof_level.Full }
-
-    let cmd t ~config_file =
-      [ "internal"
-      ; "snark-worker"
-      ; "-proof-level"
-      ; Proof_level.to_string t.proof_level
-      ; "-daemon-address"
-      ; t.daemon_address ^ ":" ^ t.daemon_port
-      ]
-      @ Base.default_cmd ~config_file ?dns_name:None
-  end
-
-  module Archive_node = struct
-    type t = { postgres_uri : string; server_port : string }
-
-    let default =
-      { postgres_uri = Postgres_uri.(default |> to_string)
-      ; server_port = "3086"
-      }
-
-    let create postgres_uri = { postgres_uri; server_port = "3086" }
-
-    let cmd t ~config_file =
-      [ "mina-archive"
-      ; "run"
-      ; "-postgres-uri"
-      ; t.postgres_uri
-      ; "-server-port"
-      ; t.server_port
-      ; "-config-file"
-      ; config_file
-      ]
-  end
+  type base_config = Base_node_config.base_config [@@deriving to_yojson]
 
   type t =
-    | Seed
-    | Block_producer of Block_producer.t
-    | Snark_coordinator of Snark_coordinator.t
-    | Snark_worker of Snark_worker.t
-    | Archive_node of Archive_node.t
+    { service_name : string
+    ; base_config : base_config
+    ; specific_config : specific_config
+    ; docker_config : Dockerfile.Service.t
+    }
+  [@@deriving to_yojson]
 
-  let create_cmd t ~config_file ?docker_dns_name =
-    match t with
-    | Seed ->
-        Seed.cmd @ Base.default_cmd ~config_file ?dns_name:docker_dns_name
-    | Block_producer args ->
-        Block_producer.cmd args
-        @ Base.default_cmd ~config_file ?dns_name:docker_dns_name
-    | Snark_coordinator args ->
-        Snark_coordinator.cmd args ~config_file
-    | Snark_worker args ->
-        Snark_worker.cmd args ~config_file
-    | Archive_node args ->
-        Archive_node.cmd args ~config_file
-end
+  let create_specific_command specific_config =
+    [ "mina-archive"
+    ; "run"
+    ; "-postgres-uri"
+    ; specific_config.postgres_uri
+    ; "-server-port"
+    ; Int.to_string specific_config.server_port
+    ; "-config-file"
+    ; specific_config.postgres_uri
+    ]
 
-module Services = struct
-  module Seed = struct
-    let name = "seed"
+  let create_cmd base_config specific_config =
+    let base_args = Base_node_config.to_list base_config in
+    let archive_node_args = create_specific_command specific_config in
+    List.concat [ archive_node_args; base_args ]
 
-    let env = Envs.base_node_envs
+  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
+      ~environment ~base_config ~specific_config =
+    let command = create_cmd base_config specific_config in
+    let docker_config : Dockerfile.Service.t =
+      { image
+      ; command
+      ; entrypoint
+      ; ports
+      ; environment
+      ; volumes
+      ; networks
+      ; dns = Dockerfile.Service.Dns.default
+      }
+    in
+    docker_config
 
-    let entrypoint = [ "/root/entrypoint.sh" ]
-
-    let cmd = Cmd.Seed
-  end
-
-  module Block_producer = struct
-    let name = "block-producer"
-
-    let secret_name = "keypair"
-
-    let env = Envs.base_node_envs
-
-    let entrypoint = [ "/root/entrypoint.sh" ]
-
-    let cmd args = Cmd.Block_producer args
-  end
-
-  module Snark_coordinator = struct
-    let name = "snark-coordinator"
-
-    let default_port = "8301"
-
-    let env = Envs.snark_coord_envs
-
-    let entrypoint = [ "/root/entrypoint.sh" ]
-
-    let cmd args = Cmd.Snark_coordinator args
-  end
-
-  module Snark_worker = struct
-    let name = "snark-worker"
-
-    let env = []
-
-    let entrypoint = [ "/root/entrypoint.sh" ]
-
-    let cmd args = Cmd.Snark_worker args
-  end
-
-  module Archive_node = struct
-    let name = "archive"
-
-    let postgres_name = "postgres"
-
-    let server_port = "3086"
-
-    let entrypoint = [ "/root/entrypoint.sh" ]
-
-    let envs = Envs.base_node_envs
-
-    let cmd args = Cmd.Archive_node args
-
-    let entrypoint_target = "/docker-entrypoint-initdb.d"
-  end
+  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
+      ~postgres_uri ~server_port ~schema ~schema_aux_files ~postgres_config =
+    let dns_name = stack_name ^ "_" ^ name in
+    let base_config = Base_node_config.default ~config_file ~dns_name in
+    let specific_config =
+      { postgres_uri; server_port; schema; schema_aux_files; postgres_config }
+    in
+    let entrypoint = Some [ "/root/entrypoint.sh" ] in
+    let docker_config =
+      create_docker_config ~image ~ports ~networks ~volumes
+        ~environment:Dockerfile.Service.Environment.default ~entrypoint
+        ~base_config ~specific_config
+    in
+    { service_name = dns_name; base_config; specific_config; docker_config }
 end

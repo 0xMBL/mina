@@ -35,7 +35,7 @@ module Node = struct
     { network_keypair : Network_keypair.t option
     ; service_id : string
     ; has_archive_container : bool
-    ; graphql_port : string
+    ; graphql_port : int
     }
 
   type t =
@@ -56,9 +56,7 @@ module Node = struct
   let get_ingress_uri node =
     let host = Printf.sprintf "http://localhost/" in
     let path = Printf.sprintf "/%s/graphql" node.service_info.service_id in
-    Uri.make ~scheme:"http" ~host ~path
-      ~port:(node.service_info.graphql_port |> Int.of_string)
-      ()
+    Uri.make ~scheme:"http" ~host ~path ~port:node.service_info.graphql_port ()
 
   let run_in_container ?(exit_code = 10) container_id ~cmd =
     let%bind.Deferred cwd = Unix.getcwd () in
@@ -90,7 +88,8 @@ module Node = struct
         >>| ignore
       else Malleable_error.return ()
     in
-    run_in_container ~exit_code:11 container_id ~cmd:[ "/start.sh" ] >>| ignore
+    failwith "TODO: start"
+  (* run_in_container ~exit_code:11 container_id ~cmd:[ "/start.sh" ] >>| ignore *)
 
   let stop node =
     let open Malleable_error.Let_syntax in
@@ -103,7 +102,7 @@ module Service_to_deploy = struct
   type service_to_deploy_config =
     { network_keypair : Network_keypair.t option
     ; has_archive_container : bool
-    ; graphql_port : string
+    ; graphql_port : int
     }
 
   type t =
