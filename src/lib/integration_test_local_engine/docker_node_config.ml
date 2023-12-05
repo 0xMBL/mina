@@ -61,19 +61,12 @@ module Base_node_config = struct
     }
   [@@deriving to_yojson]
 
-  let create_peer ~dns_name =
+  let create_peer ~stack_name ~peer_name =
     Printf.sprintf
-      "/dns4/%s/tcp/10101/p2p/12D3KooWCoGWacXE4FRwAX8VqhnWVKhz5TTEecWEuGmiNrDt2XLf"
-      dns_name
+      "/dns4/%s_%s/tcp/10101/p2p/12D3KooWCoGWacXE4FRwAX8VqhnWVKhz5TTEecWEuGmiNrDt2XLf"
+      stack_name peer_name
 
-  let default ~config_file ?dns_name =
-    let peer_option =
-      match dns_name with
-      | Some name ->
-          Some (create_peer ~dns_name:name)
-      | None ->
-          None
-    in
+  let default ~config_file ?(peer = None) =
     { log_snark_work_gossip = true
     ; log_txn_pool_gossip = true
     ; generate_genesis_proof = true
@@ -83,7 +76,7 @@ module Base_node_config = struct
     ; metrics_port = "10001"
     ; config_file
     ; libp2p_key_path = "/root/keys/libp2p_key"
-    ; peer = peer_option
+    ; peer
     }
 
   let to_list t =
@@ -132,7 +125,6 @@ module type Node_config_intf = sig
   val create_docker_config :
        image:string
     -> entrypoint:string list option
-    -> networks:Network.t list
     -> ports:Port.t list
     -> volumes:Volume.t list
     -> environment:Environment.t
@@ -176,8 +168,8 @@ module Block_producer_config = struct
     let block_producer_args = create_specific_command specific_config in
     List.concat [ block_producer_args; base_args ]
 
-  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
-      ~environment ~base_config ~specific_config =
+  let create_docker_config ~image ~entrypoint ~ports ~volumes ~environment
+      ~base_config ~specific_config =
     let command = create_cmd base_config specific_config in
     let docker_config : Dockerfile.Service.t =
       { image
@@ -186,20 +178,16 @@ module Block_producer_config = struct
       ; ports
       ; environment
       ; volumes
-      ; networks
       ; dns = Dockerfile.Service.Dns.default
       }
     in
     docker_config
 
-  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
-      ~keypair ~libp2p_secret =
-    let service_name = stack_name ^ "_" ^ name in
+  let create ~service_name ~image ~ports ~volumes ~config_file ~peer ~keypair
+      ~libp2p_secret =
     (* TODO: make this better *)
-    let priv_key_path = "/root/keys/" ^ name in
-    let base_config =
-      Base_node_config.default ~config_file ~dns_name:service_name
-    in
+    let priv_key_path = "/root/keys/" ^ service_name in
+    let base_config = Base_node_config.default ~config_file ~peer in
     let specific_config =
       { keypair
       ; priv_key_path
@@ -210,11 +198,11 @@ module Block_producer_config = struct
     in
     let entrypoint = Some [ "/root/entrypoint.sh" ] in
     let docker_config =
-      create_docker_config ~image ~ports ~networks ~volumes
+      create_docker_config ~image ~ports ~volumes
         ~environment:Dockerfile.Service.Environment.default ~entrypoint
         ~base_config ~specific_config
     in
-    { service_name = name; base_config; specific_config; docker_config }
+    { service_name; base_config; specific_config; docker_config }
 end
 
 module Seed_config = struct
@@ -237,8 +225,8 @@ module Seed_config = struct
     let seed_args = create_specific_command specific_config in
     List.concat [ seed_args; base_args ]
 
-  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
-      ~environment ~base_config ~specific_config =
+  let create_docker_config ~image ~entrypoint ~ports ~volumes ~environment
+      ~base_config ~specific_config =
     let command = create_cmd base_config specific_config in
     let docker_config : Dockerfile.Service.t =
       { image
@@ -247,24 +235,20 @@ module Seed_config = struct
       ; ports
       ; environment
       ; volumes
-      ; networks
       ; dns = Dockerfile.Service.Dns.default
       }
     in
     docker_config
 
-  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file =
-    let service_name = stack_name ^ "_" ^ name in
-    let base_config =
-      Base_node_config.default ~config_file ~dns_name:service_name
-    in
+  let create ~service_name ~image ~ports ~volumes ~config_file ~peer =
+    let base_config = Base_node_config.default ~config_file ~peer in
     let entrypoint = Some [ "/root/entrypoint.sh" ] in
     let docker_config =
-      create_docker_config ~image ~ports ~networks ~volumes
+      create_docker_config ~image ~ports ~volumes
         ~environment:Dockerfile.Service.Environment.default ~entrypoint
         ~base_config ~specific_config:()
     in
-    { service_name = name; base_config; specific_config = (); docker_config }
+    { service_name; base_config; specific_config = (); docker_config }
 end
 
 module Snark_worker_config = struct
@@ -272,7 +256,7 @@ module Snark_worker_config = struct
     { daemon_address : string; daemon_port : string; proof_level : string }
   [@@deriving to_yojson]
 
-  type base_config = Base_node_config.base_config [@@deriving to_yojson]
+  type base_config = unit [@@deriving to_yojson]
 
   type t =
     { service_name : string
@@ -289,15 +273,16 @@ module Snark_worker_config = struct
     ; specific_config.proof_level
     ; "-daemon-address"
     ; specific_config.daemon_address ^ ":" ^ specific_config.daemon_port
+    ; "--shutdown-on-disconnect"
+    ; "false"
     ]
 
-  let create_cmd base_config specific_config =
-    let base_args = Base_node_config.to_list base_config in
+  let create_cmd () specific_config =
     let snark_worker_args = create_specific_command specific_config in
-    List.concat [ snark_worker_args; base_args ]
+    List.concat [ snark_worker_args ]
 
-  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
-      ~environment ~base_config ~specific_config =
+  let create_docker_config ~image ~entrypoint ~ports ~volumes ~environment
+      ~base_config ~specific_config =
     let command = create_cmd base_config specific_config in
     let docker_config : Dockerfile.Service.t =
       { image
@@ -306,28 +291,23 @@ module Snark_worker_config = struct
       ; ports
       ; environment
       ; volumes
-      ; networks
       ; dns = Dockerfile.Service.Dns.default
       }
     in
     docker_config
 
-  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
-      ~daemon_address ~daemon_port =
-    let service_name = stack_name ^ "_" ^ name in
-    let base_config =
-      Base_node_config.default ~config_file ~dns_name:service_name
-    in
+  let create ~service_name ~image ~ports ~volumes ~daemon_address ~daemon_port =
+    let base_config = () in
     let specific_config =
-      { daemon_address; daemon_port; proof_level = "Full" }
+      { daemon_address; daemon_port; proof_level = "full" }
     in
     let entrypoint = Some [ "/root/entrypoint.sh" ] in
     let docker_config =
-      create_docker_config ~image ~ports ~networks ~volumes
+      create_docker_config ~image ~ports ~volumes
         ~environment:Dockerfile.Service.Environment.default ~entrypoint
         ~base_config ~specific_config
     in
-    { service_name = name; base_config; specific_config; docker_config }
+    { service_name; base_config; specific_config; docker_config }
 end
 
 module Snark_coordinator_config = struct
@@ -363,6 +343,8 @@ module Snark_coordinator_config = struct
     [ ("MINA_SNARK_KEY", snark_coordinator_key)
     ; ("MINA_SNARK_FEE", snark_worker_fee)
     ; ("WORK_SELECTION", "seq")
+    ; ("MINA_CLIENT_TRUSTLIST", "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16")
+      (* Allow all IPs to connect*)
     ]
 
   let create_cmd base_config specific_config =
@@ -370,8 +352,8 @@ module Snark_coordinator_config = struct
     let snark_coordinator_args = create_specific_command specific_config in
     List.concat [ snark_coordinator_args; base_args ]
 
-  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
-      ~environment ~base_config ~specific_config =
+  let create_docker_config ~image ~entrypoint ~ports ~volumes ~environment
+      ~base_config ~specific_config =
     let command = create_cmd base_config specific_config in
     let docker_config : Dockerfile.Service.t =
       { image
@@ -380,18 +362,14 @@ module Snark_coordinator_config = struct
       ; ports
       ; environment
       ; volumes
-      ; networks
       ; dns = Dockerfile.Service.Dns.default
       }
     in
     docker_config
 
-  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
+  let create ~service_name ~image ~ports ~volumes ~config_file ~peer
       ~snark_coordinator_key ~snark_worker_fee ~worker_nodes =
-    let service_name = stack_name ^ "_" ^ name in
-    let base_config =
-      Base_node_config.default ~config_file ~dns_name:service_name
-    in
+    let base_config = Base_node_config.default ~config_file ~peer in
     let specific_config =
       { snark_coordinator_key
       ; snark_worker_fee
@@ -402,12 +380,13 @@ module Snark_coordinator_config = struct
     let entrypoint = Some [ "/root/entrypoint.sh" ] in
     let environment =
       snark_coordinator_default_env ~snark_coordinator_key ~snark_worker_fee
+      @ Dockerfile.Service.Environment.default
     in
     let docker_config =
-      create_docker_config ~image ~ports ~networks ~volumes ~environment
-        ~entrypoint ~base_config ~specific_config
+      create_docker_config ~image ~ports ~volumes ~environment ~entrypoint
+        ~base_config ~specific_config
     in
-    { service_name = name; base_config; specific_config; docker_config }
+    { service_name; base_config; specific_config; docker_config }
 end
 
 module Postgres_config = struct
@@ -461,8 +440,8 @@ module Postgres_config = struct
   let create_connection_info ~host ~username ~password ~database ~port =
     { host; username; password; database; port }
 
-  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
-      ~environment ~base_config ~specific_config =
+  let create_docker_config ~image ~entrypoint ~ports ~volumes ~environment
+      ~base_config ~specific_config =
     let command = create_cmd base_config specific_config in
     let docker_config : Dockerfile.Service.t =
       { image
@@ -471,7 +450,6 @@ module Postgres_config = struct
       ; ports
       ; environment
       ; volumes
-      ; networks
       ; dns = Dockerfile.Service.Dns.default
       }
     in
@@ -484,9 +462,7 @@ module Postgres_config = struct
                 (Services.Archive_node.entrypoint_target ^/ mina_create_schema)
             in    
     **)
-  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~connection_info
-      =
-    let _service_name = stack_name ^ "_" ^ name in
+  let create ~service_name ~image ~ports ~volumes ~connection_info =
     let base_config = () in
     let entrypoint = None in
     let environment =
@@ -495,10 +471,10 @@ module Postgres_config = struct
         ~port:(Int.to_string connection_info.port)
     in
     let docker_config =
-      create_docker_config ~image ~ports ~networks ~volumes ~environment
-        ~entrypoint ~base_config ~specific_config:connection_info
+      create_docker_config ~image ~ports ~volumes ~environment ~entrypoint
+        ~base_config ~specific_config:connection_info
     in
-    { service_name = name
+    { service_name
     ; base_config
     ; specific_config = connection_info
     ; docker_config
@@ -541,8 +517,8 @@ module Archive_node_config = struct
     let archive_node_args = create_specific_command specific_config in
     List.concat [ archive_node_args; base_args ]
 
-  let create_docker_config ~image ~entrypoint ~networks ~ports ~volumes
-      ~environment ~base_config ~specific_config =
+  let create_docker_config ~image ~entrypoint ~ports ~volumes ~environment
+      ~base_config ~specific_config =
     let command = create_cmd base_config specific_config in
     let docker_config : Dockerfile.Service.t =
       { image
@@ -551,24 +527,22 @@ module Archive_node_config = struct
       ; ports
       ; environment
       ; volumes
-      ; networks
       ; dns = Dockerfile.Service.Dns.default
       }
     in
     docker_config
 
-  let create ~stack_name ~name ~image ~networks ~ports ~volumes ~config_file
+  let create ~service_name ~image ~ports ~volumes ~config_file ~peer
       ~postgres_uri ~server_port ~schema ~schema_aux_files ~postgres_config =
-    let dns_name = stack_name ^ "_" ^ name in
-    let base_config = Base_node_config.default ~config_file ~dns_name in
+    let base_config = Base_node_config.default ~config_file ~peer in
     let specific_config =
       { postgres_uri; server_port; schema; schema_aux_files; postgres_config }
     in
     let entrypoint = Some [ "/root/entrypoint.sh" ] in
     let docker_config =
-      create_docker_config ~image ~ports ~networks ~volumes
+      create_docker_config ~image ~ports ~volumes
         ~environment:Dockerfile.Service.Environment.default ~entrypoint
         ~base_config ~specific_config
     in
-    { service_name = dns_name; base_config; specific_config; docker_config }
+    { service_name; base_config; specific_config; docker_config }
 end

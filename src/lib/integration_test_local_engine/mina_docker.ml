@@ -33,7 +33,6 @@ module Network_config = struct
     ; snark_coordinator_config :
         Docker_node_config.Snark_coordinator_config.t option
     ; archive_node_configs : Docker_node_config.Archive_node_config.t list
-    ; docker_network : Docker_compose.Dockerfile.Network.t
     ; log_precomputed_blocks : bool
     ; cpu_request : int
     ; mem_request : string
@@ -228,7 +227,7 @@ module Network_config = struct
                       in
                       { genesis_account with balance; timing } )
                 in
-                (* because we run integration tests with Proof_level = Full, the winner account
+                (* because we run integration tests with Proof_level = full, the winner account
                    gets added to the genesis ledger
 
                    there isn't a corresponding mechanism to add the winner account to epoch
@@ -316,11 +315,21 @@ module Network_config = struct
     let open Docker_node_config in
     let open Docker_compose.Dockerfile in
     let port_manager = PortManager.create ~min_port:10000 ~max_port:10100 in
-    let docker_network =
-      { Network.name = "mina-network"; driver = "overlay" }
-    in
     let docker_volumes =
       [ Service.Volume.runtime_config_volume; Service.Volume.entrypoint_volume ]
+    in
+    let seed_configs =
+      [ Seed_config.create ~service_name:"seed" ~image:images.mina
+          ~ports:(PortManager.allocate_ports_for_node port_manager)
+          ~volumes:docker_volumes
+          ~config_file:Service.Volume.runtime_config_volume.target ~peer:None
+      ]
+    in
+    let seed_config_peer = seed_configs |> List.hd_exn in
+    let seed_config_peer =
+      Some
+        (Base_node_config.create_peer ~stack_name
+           ~peer_name:seed_config_peer.service_name )
     in
     let block_producer_configs =
       List.map block_producers ~f:(fun node ->
@@ -349,27 +358,23 @@ module Network_config = struct
             ]
             @ docker_volumes
           in
-          Block_producer_config.create ~stack_name ~name:node.account_name
-            ~image:images.mina ~networks:[ docker_network.name ]
+          Block_producer_config.create ~service_name:node.account_name
+            ~image:images.mina
             ~ports:(PortManager.allocate_ports_for_node port_manager)
             ~volumes ~keypair ~libp2p_secret:""
-            ~config_file:Service.Volume.runtime_config_volume.target )
-    in
-    let seed_configs =
-      [ Seed_config.create ~stack_name ~name:"seed" ~image:images.mina
-          ~networks:[ docker_network.name ]
-          ~ports:(PortManager.allocate_ports_for_node port_manager)
-          ~volumes:docker_volumes
-          ~config_file:Service.Volume.runtime_config_volume.target
-      ]
+            ~config_file:Service.Volume.runtime_config_volume.target
+            ~peer:seed_config_peer )
     in
     let snark_coordinator_config =
       match snark_coordinator with
       | None ->
           None
-      | Some node ->
+      | Some snark_coordinator_node ->
           let network_kp =
-            match String.Map.find genesis_keypairs node.account_name with
+            match
+              String.Map.find genesis_keypairs
+                snark_coordinator_node.account_name
+            with
             | Some acct ->
                 acct
             | None ->
@@ -378,7 +383,8 @@ module Network_config = struct
                     "Failing because the account key of all initial snark \
                      coordinators must be in the genesis ledger.  name of \
                      Node: %s.  name of Account which does not exist: %s"
-                    node.node_name node.account_name
+                    snark_coordinator_node.node_name
+                    snark_coordinator_node.account_name
                 in
                 failwith failstring
           in
@@ -386,26 +392,35 @@ module Network_config = struct
             Public_key.Compressed.to_base58_check
               (Public_key.compress network_kp.keypair.public_key)
           in
-          let coordinator_name = stack_name ^ "_" ^ node.node_name in
+          let coordinator_name =
+            stack_name ^ "_" ^ snark_coordinator_node.node_name
+          in
+          let coordinator_ports =
+            PortManager.allocate_ports_for_node port_manager
+          in
+          let daemon_port =
+            coordinator_ports |> List.find_exn ~f:(fun p -> p.target = 8301)
+          in
           let worker_nodes =
-            List.init node.worker_nodes ~f:(fun index ->
-                Docker_node_config.Snark_worker_config.create ~stack_name
-                  ~name:("snark-worker" ^ "-" ^ Int.to_string (index + 1))
-                  ~image:images.mina ~networks:[ docker_network.name ]
+            List.init snark_coordinator_node.worker_nodes ~f:(fun index ->
+                Docker_node_config.Snark_worker_config.create
+                  ~service_name:
+                    ("snark-worker" ^ "-" ^ Int.to_string (index + 1))
+                  ~image:images.mina
                   ~ports:
                     (Docker_node_config.PortManager.allocate_ports_for_node
                        port_manager )
                   ~volumes:docker_volumes
-                  ~config_file:Service.Volume.runtime_config_volume.target
-                  ~daemon_port:"8301" ~daemon_address:coordinator_name )
+                  ~daemon_port:(Int.to_string daemon_port.target)
+                  ~daemon_address:coordinator_name )
           in
           Some
-            (Snark_coordinator_config.create ~stack_name ~name:node.node_name
-               ~image:images.mina ~networks:[ docker_network.name ]
-               ~ports:(PortManager.allocate_ports_for_node port_manager)
-               ~volumes:docker_volumes
+            (Snark_coordinator_config.create
+               ~service_name:snark_coordinator_node.node_name ~image:images.mina
+               ~ports:coordinator_ports ~volumes:docker_volumes
                ~config_file:Service.Volume.runtime_config_volume.target
-               ~snark_worker_fee ~worker_nodes ~snark_coordinator_key:public_key )
+               ~snark_worker_fee ~worker_nodes ~snark_coordinator_key:public_key
+               ~peer:seed_config_peer )
     in
     let archive_node_configs =
       List.init num_archive_nodes ~f:(fun index ->
@@ -423,9 +438,9 @@ module Network_config = struct
               ~target:postgres_target_port
           in
           let postgres_config =
-            Postgres_config.create ~stack_name ~name:connection_info.host
-              ~image:postgres_image ~networks:[ docker_network.name ]
-              ~ports:[ postgres_port ] ~volumes:[] ~connection_info
+            Postgres_config.create ~service_name:connection_info.host
+              ~image:postgres_image ~ports:[ postgres_port ] ~volumes:[]
+              ~connection_info
           in
           let server_port =
             Service.Port.create
@@ -440,14 +455,14 @@ module Network_config = struct
           let postgres_uri =
             Postgres_config.create_connection_uri connection_info
           in
-          Archive_node_config.create ~stack_name
-            ~name:("archive-" ^ Int.to_string (index + 1))
-            ~image:images.archive_node ~networks:[ docker_network.name ]
-            ~ports:[ server_port; rest_port ] ~volumes:docker_volumes
+          Archive_node_config.create
+            ~service_name:("archive-" ^ Int.to_string (index + 1))
+            ~image:images.archive_node ~ports:[ server_port; rest_port ]
+            ~volumes:docker_volumes
             ~config_file:Service.Volume.runtime_config_volume.target
             ~server_port:server_port.target ~schema:mina_archive_schema
             ~schema_aux_files:mina_archive_schema_aux_files ~postgres_config
-            ~postgres_uri )
+            ~peer:seed_config_peer ~postgres_uri )
     in
     (* NETWORK CONFIG *)
     { debug_arg = debug
@@ -467,7 +482,6 @@ module Network_config = struct
         ; seed_configs
         ; snark_coordinator_config
         ; archive_node_configs (* Resource configs *)
-        ; docker_network
         ; cpu_request = 1
         ; mem_request = "12Gi"
         ; worker_cpu_request = 6
@@ -529,10 +543,7 @@ module Network_config = struct
       |> merge snark_coordinator_map
       |> merge snark_worker_map |> merge archive_node_map |> merge postgres_map
     in
-    { version = docker_swarm_version
-    ; services
-    ; networks = network_config.docker.docker_network
-    }
+    { version = docker_swarm_version; services }
 end
 
 module Network_manager = struct
