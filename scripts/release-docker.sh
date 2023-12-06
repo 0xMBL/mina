@@ -10,7 +10,7 @@ set +x
 CLEAR='\033[0m'
 RED='\033[0;31m'
 # Array of valid service names
-VALID_SERVICES=('mina-archive' 'mina-daemon' 'mina-rosetta' 'mina-test-executive' 'mina-test-suite' 'mina-batch-txn' 'mina-zkapp-test-transaction' 'mina-toolchain' 'bot' 'leaderboard' 'delegation-backend' 'delegation-backend-toolchain' 'itn-orchestrator')
+VALID_SERVICES=('mina-archive' 'mina-daemon' 'mina-rosetta' 'mina-berkeley-migration' 'mina-test-executive' 'mina-test-suite' 'mina-batch-txn' 'mina-zkapp-test-transaction' 'mina-toolchain' 'bot' 'leaderboard' 'delegation-backend' 'delegation-backend-toolchain' 'itn-orchestrator')
 
 function usage() {
   if [[ -n "$1" ]]; then
@@ -117,6 +117,9 @@ mina-batch-txn)
   ;;
 mina-rosetta)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-rosetta"
+  ;;
+mina-berkeley-migration)
+  DOCKERFILE_PATH="dockerfiles/Dockerfile-berkeley-migration"
   ;;
 mina-zkapp-test-transaction)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-zkapp-test-transaction"

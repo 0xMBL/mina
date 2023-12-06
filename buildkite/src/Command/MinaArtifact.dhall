@@ -71,6 +71,20 @@ let pipeline : DebianVersions.DebVersion -> Profiles.Type ->  PipelineMode.Type 
 
         DockerImage.generateStep daemonBerkeleySpec,
 
+        -- daemon berkeley migration image
+        let daemonBerkeleyMigrationSpec = DockerImage.ReleaseSpec::{
+          deps=DebianVersions.dependsOn debVersion profile,
+          service="mina-berkeley-migration",
+          network="berkeley",
+          deb_codename="${DebianVersions.lowerName debVersion}",
+          deb_profile="${Profiles.lowerName profile}",
+          step_key="berkeley-migration-${DebianVersions.lowerName debVersion}${Profiles.toLabelSegment profile}-docker-image"
+        }
+
+        in
+
+        DockerImage.generateStep daemonBerkeleyMigrationSpec,
+
         -- test_executive image
         let testExecutiveSpec = DockerImage.ReleaseSpec::{
           deps=DebianVersions.dependsOn debVersion profile,
