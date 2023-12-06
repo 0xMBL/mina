@@ -54,7 +54,7 @@ module Node = struct
   let network_keypair { service_info; _ } = service_info.network_keypair
 
   let get_ingress_uri node =
-    let host = Printf.sprintf "http://localhost/" in
+    let host = Printf.sprintf "http://127.0.0.1/" in
     let path = Printf.sprintf "/%s/graphql" node.service_info.service_id in
     Uri.make ~scheme:"http" ~host ~path ~port:node.service_info.graphql_port ()
 
