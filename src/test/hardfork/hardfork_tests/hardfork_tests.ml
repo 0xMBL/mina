@@ -267,7 +267,7 @@ let () =
             HardForkTests.random_migration
         ] )
     ; ( "checkpoints"
-      , [ test_case "Test for short global slots on artificial data" `Quick
+      , [ test_case "Test for checkpoint in migration process" `Quick
             HardForkTests.checkpoint
         ] )
     ]

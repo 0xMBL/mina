@@ -2,9 +2,9 @@
   "executor": "docker",
   "dockers": {
     "mainnet_archive":"minaprotocol/mina-archive:1.4.0-c980ba8-bullseye",
-    "archive":"gcr.io/o1labs-192920/mina-archive:2.0.0rampup2-dkijania-migration-app-tests-db05af0-buster",
-    "daemon":"gcr.io/o1labs-192920/mina-berkeley:2.0.0rampup2-dkijania-migration-app-tests-db05af0-buster",
-    "test_suite":"gcr.io/o1labs-192920/mina-test-suite:2.0.0rampup2-dkijania-migration-app-tests-db05af0-buster",
+    "archive":"gcr.io/o1labs-192920/mina-archive:{DEB_VERSION}",
+    "berkeley_migration":"gcr.io/o1labs-192920/mina-berkeley-migration:{DEB_VERSION}",
+    "test_suite":"gcr.io/o1labs-192920/mina-test-suite:{DEB_VERSION}",
     "postgres":"postgres:latest"
   },
   "paths": {

@@ -124,7 +124,7 @@ module HardForkSteps = struct
 
   let docker_of_app t app =
     if String.( = ) app t.env.paths.berkeley_migration then
-      Option.value_exn t.env.dockers.archive
+      Option.value_exn t.env.dockers.berkeley_migration
         ~message:"archive docker is not defined"
     else if String.( = ) app t.env.paths.berkeley_account_tables then
       Option.value_exn t.env.dockers.archive
