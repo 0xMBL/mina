@@ -120,6 +120,7 @@ mina-rosetta)
   ;;
 mina-berkeley-migration)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-berkeley-migration"
+  DOCKER_CONTEXT="dockerfiles/"
   ;;
 mina-zkapp-test-transaction)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-zkapp-test-transaction"
