@@ -24,7 +24,7 @@ module Settings = struct
     type dockers =
       { mainnet_archive : string
       ; archive : string option [@default None]
-      ; daemon : string option [@default None]
+      ; berkeley_migration : string option [@default None]
       ; test_suite : string option [@default None]
       ; postgres : string
       }
