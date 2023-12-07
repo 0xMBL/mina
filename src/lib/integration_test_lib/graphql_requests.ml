@@ -1098,6 +1098,8 @@ let start_filtered_log ~logger ~log_filter node_uri =
         (* TODO: If this is common, figure out what to do *)
         return (Ok ()) )
   | Error e ->
+      print_endline
+        (sprintf "DEBUG: start_filtered_log error: %s " (Error.to_string_hum e)) ;
       return (Error e)
 
 let get_filtered_log_entries ~last_log_index_seen node_uri =

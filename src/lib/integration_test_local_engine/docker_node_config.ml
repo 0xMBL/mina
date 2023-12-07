@@ -207,7 +207,7 @@ module Block_producer_config = struct
   let create ~service_name ~image ~ports ~volumes ~config_file ~peer ~keypair
       ~libp2p_secret =
     (* TODO: make this better *)
-    let priv_key_path = "/root/keys/" ^ service_name in
+    let priv_key_path = "/root/keys/" ^ service_name ^ "-key" in
     let base_config = Base_node_config.default ~config_file ~peer in
     let specific_config =
       { keypair

@@ -52,6 +52,9 @@ let parse_event_from_log_entry ~logger log_entry =
             (* Currently unreachable, but we could include error logs here if
                desired.
             *)
+            [%log warn] "DEBUG: parsing error log" ;
+            [%log warn] "DEBUG: msg = $msg"
+              ~metadata:[ ("msg", Logger.Message.to_yojson msg) ] ;
             Event_type.parse_error_log msg
       in
       event )
@@ -70,6 +73,9 @@ let rec filtered_log_entries_poll node ~logger ~event_writer
         Array.iter log_entries ~f:(fun log_entry ->
             match parse_event_from_log_entry ~logger log_entry with
             | Ok a ->
+                print_endline
+                  (sprintf "WRITING LOG ENTRY FROM NODE %s: %s"
+                     (Node.infra_id node) log_entry ) ;
                 Pipe.write_without_pushback_if_open event_writer (node, a)
             | Error e ->
                 [%log warn] "Error parsing log $error"
@@ -94,7 +100,8 @@ let rec filtered_log_entries_poll node ~logger ~event_writer
 
 let rec start_filtered_log node ~logger ~log_filter ~event_writer =
   let open Deferred.Let_syntax in
-  if not (Pipe.is_closed event_writer) then
+  print_endline "start_filtered_log" ;
+  if not (Pipe.is_closed event_writer) then (
     match%bind
       Integration_test_lib.Graphql_requests.start_filtered_log ~logger
         ~log_filter
@@ -103,7 +110,8 @@ let rec start_filtered_log node ~logger ~log_filter ~event_writer =
     | Ok () ->
         return (Ok ())
     | Error _ ->
-        start_filtered_log node ~logger ~log_filter ~event_writer
+        print_endline "start_filtered_log error" ;
+        start_filtered_log node ~logger ~log_filter ~event_writer )
   else Deferred.Or_error.error_string "Event writer closed"
 
 let rec poll_node_for_logs_in_background ~log_filter ~logger ~event_writer

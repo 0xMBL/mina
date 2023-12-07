@@ -70,11 +70,21 @@ struct
 
   let nodes_to_initialize nodes =
     let open Network_state in
+    print_endline "DEBUG: nodes_to_initialize" ;
     network_state ~id:Nodes_to_initialize
       ~description:
         ( nodes |> List.map ~f:Node.id |> String.concat ~sep:", "
         |> sprintf "[%s] to initialize" )
       ~f:(fun (state : Network_state.t) ->
+        print_endline "DEBUG: network_state" ;
+        (* Print all nodes. *)
+        List.iter nodes ~f:(fun node ->
+            print_endline (sprintf "DEBUG: node: %s" (Node.id node)) ) ;
+        String.Map.iteri state.node_initialization ~f:(fun ~key ~data ->
+            print_endline
+              (sprintf "DEBUG: node_initialization: %s -> %b" key data) ) ;
+        print_endline "------------------------------------------" ;
+        (* Is it the name not being found? *)
         List.for_all nodes ~f:(fun node ->
             String.Map.find state.node_initialization (Node.id node)
             |> Option.value ~default:false ) )

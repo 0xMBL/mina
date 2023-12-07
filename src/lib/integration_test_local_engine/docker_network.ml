@@ -54,8 +54,10 @@ module Node = struct
   let network_keypair { service_info; _ } = service_info.network_keypair
 
   let get_ingress_uri node =
-    let host = Printf.sprintf "http://127.0.0.1/" in
-    let path = Printf.sprintf "/%s/graphql" node.service_info.service_id in
+    let host = Printf.sprintf "127.0.0.1" in
+    let path = Printf.sprintf "/graphql" in
+    print_endline
+      (sprintf "DEBUG: get_ingress_uri %s" node.service_info.service_id) ;
     Uri.make ~scheme:"http" ~host ~path ~port:node.service_info.graphql_port ()
 
   let run_in_container ?(exit_code = 10) container_id ~cmd =
@@ -80,16 +82,18 @@ module Node = struct
 
   let start ~fresh_state node : unit Malleable_error.t =
     let open Malleable_error.Let_syntax in
+    print_endline
+      (sprintf "DEBUG: starting node %s" node.service_info.service_id) ;
     let%bind container_id = get_container_id node.service_info.service_id in
+    print_endline (sprintf "DEBUG: container_id %s" container_id) ;
     node.should_be_running <- true ;
     let%bind () =
       if fresh_state then
-        run_in_container container_id ~cmd:[ "rm -rf .mina-config/*" ]
+        run_in_container container_id ~cmd:[ "rm"; "-rf"; ".mina-config/*" ]
         >>| ignore
       else Malleable_error.return ()
     in
-    failwith "TODO: start"
-  (* run_in_container ~exit_code:11 container_id ~cmd:[ "/start.sh" ] >>| ignore *)
+    run_in_container ~exit_code:11 container_id ~cmd:[ "/start.sh" ] >>| ignore
 
   let stop node =
     let open Malleable_error.Let_syntax in
@@ -164,13 +168,11 @@ let snark_coordinators { snark_coordinators; _ } = snark_coordinators
 
 let archive_nodes { archive_nodes; _ } = archive_nodes
 
-let all_mina_nodes
-    { seeds; block_producers; snark_coordinators; archive_nodes; _ } =
+let all_mina_nodes { seeds; block_producers; snark_coordinators; _ } =
   List.concat
     [ Core.String.Map.to_alist seeds
     ; Core.String.Map.to_alist block_producers
     ; Core.String.Map.to_alist snark_coordinators
-    ; Core.String.Map.to_alist archive_nodes
     ]
   |> Core.String.Map.of_alist_exn
 
@@ -181,18 +183,15 @@ let all_nodes t =
     [ Core.String.Map.to_alist t.seeds
     ; Core.String.Map.to_alist t.block_producers
     ; Core.String.Map.to_alist t.snark_coordinators
-    ; Core.String.Map.to_alist t.snark_workers
-    ; Core.String.Map.to_alist t.archive_nodes
     ]
   |> Core.String.Map.of_alist_exn
 
-(* all_non_seed_nodes returns everything in the network except seed nodes. *)
+(* all_non_seed_nodes returns everything in the network except seed nodes and archive nodes. *)
 let all_non_seed_nodes t =
   List.concat
     [ Core.String.Map.to_alist t.block_producers
     ; Core.String.Map.to_alist t.snark_coordinators
     ; Core.String.Map.to_alist t.snark_workers
-    ; Core.String.Map.to_alist t.archive_nodes
     ]
   |> Core.String.Map.of_alist_exn
 
@@ -287,5 +286,4 @@ let initialize_infra ~logger network =
                          node.service_info.service_id ) )
         in
         Deferred.return res
-        (* TODO: parallelize (requires accumlative hard errors) *)
       else Deferred.return res )

@@ -369,14 +369,20 @@ module Network_config = struct
             ~schema_aux_files:mina_archive_schema_aux_files ~postgres_config
             ~postgres_uri )
     in
-    (*TODO: Make this better *)
-    let archive_address = archive_node_configs |> List.hd_exn in
+    let archive_address =
+      match archive_node_configs with
+      | [] ->
+          None
+      | xs ->
+          let archive_address = List.hd_exn xs in
+          Some (archive_address.service_name ^ ":3086")
+    in
     let seed_configs =
       [ Seed_config.create ~service_name:"seed" ~image:images.mina
           ~ports:(PortManager.allocate_ports_for_node port_manager)
           ~volumes:docker_volumes
           ~config_file:Base_node_config.runtime_config_volume.target ~peer:None
-          ~archive_address:(Some (archive_address.service_name ^ ":3086"))
+          ~archive_address
       ]
     in
     let block_producer_configs =
@@ -406,7 +412,7 @@ module Network_config = struct
             ]
             @ docker_volumes
           in
-          Block_producer_config.create ~service_name:node.account_name
+          Block_producer_config.create ~service_name:node.node_name
             ~image:images.mina
             ~ports:(PortManager.allocate_ports_for_node port_manager)
             ~volumes ~keypair ~libp2p_secret:""
@@ -599,7 +605,6 @@ module Network_manager = struct
       Util.run_cmd_or_hard_error "/" "docker"
         [ "stack"; "rm"; network_config.docker.stack_name ]
       >>| Fn.const ()
-      (* Wait 8 seconds *)
     else return ()
 
   let generate_docker_stack_file ~logger ~docker_dir ~network_config =
@@ -851,7 +856,7 @@ module Network_manager = struct
     in
     t.deployed <- true ;
     (* TODO: Make this better, Wait for stack to be deployed *)
-    let%bind () = Deferred.bind ~f:return (after (Time.Span.of_ms 10000.)) in
+    let%bind () = Deferred.bind ~f:return (after (Time.Span.of_ms 15000.)) in
     let config : Docker_network.config =
       { stack_name = t.stack_name; graphql_enabled = t.graphql_enabled }
     in
