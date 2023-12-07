@@ -2,8 +2,8 @@
 
 # test replayer on known archive db
 
-DEFAULT_REPLAYER_DIR=src/app/replayer
-DEFAULT_REPLAYER_APP=./_build/default/src/app/replayer/replayer.exe
+REPLAYER_DIR=src/app/replayer
+REPLAYER_APP=_build/default/src/app/replayer/replayer.exe
 
 while [[ "$#" -gt 0 ]]; do case $1 in
   -d|--dir) REPLAYER_DIR="$2"; shift;;
@@ -16,11 +16,9 @@ DB=archive
 DOCKER_IMAGE=12.4-alpine
 CONTAINER_FILE=docker.container
 
-PG_PORT=5432
+PG_PORT=5433
 PG_PASSWORD=somepassword
 PG_CONN=postgres://postgres:$PG_PASSWORD@localhost:$PG_PORT/$DB
-
-SOCKET_DIR=/var/run/postgresql
 
 function cleanup () {
     CONTAINER=`cat $CONTAINER_FILE`
@@ -46,19 +44,16 @@ function report () {
 # -v mounts dir with Unix socket on host
 echo "Starting docker with Postgresql"
 docker run \
-       --name replayer-postgres -d -v $SOCKET_DIR:$SOCKET_DIR -p $PG_PORT:$PG_PORT \
+       --name replayer-postgres -d -p $PG_PORT:5432 \
        -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=$PG_PASSWORD -e POSTGRES_DB=$DB postgres:$DOCKER_IMAGE > $CONTAINER_FILE
 
-trap "cleanup; exit 1" SIGINT
+#trap "cleanup; exit 1" SIGINT
 
 # wait for Postgresql to become available
 sleep 5
 
 echo "Populating archive database"
-psql -U postgres -d $DB < $REPLAYER_DIR/test/archive_db.sql
-
-echo "Building replayer"
-make replayer
+psql $PG_CONN < $REPLAYER_DIR/test/archive_db.sql
 
 echo "Running replayer"
 $REPLAYER_APP --archive-uri $PG_CONN --input-file $REPLAYER_DIR/test/input.json
@@ -67,6 +62,6 @@ RESULT=$?
 
 report $RESULT
 
-cleanup
+#cleanup
 
 exit $RESULT
