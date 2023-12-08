@@ -102,10 +102,6 @@ module Poly_comm : sig
   module Without_degree_bound : sig
     type 'a t = 'a array
   end
-
-  module With_degree_bound : sig
-    type 'a t = { elems : 'a array }
-  end
 end
 
 (** The number of wires in the proving system *)
