@@ -115,6 +115,15 @@ module Base_node_config = struct
 # Generate keypair and set permissions
 mina libp2p generate-keypair --privkey-path /root/keys/libp2p_key
 /bin/chmod -R 700 /root/keys/
+# Import any compatible keys in /root/keys, excluding certain keys
+for key_file in /root/keys/*; do
+    # Exclude specific keys (e.g., libp2p keys)
+    if [[ $(basename "$key_file") != "libp2p_key" ]]; then
+        # Import the key if it's a compatible key file
+        # Add additional conditions here if there are more specific requirements
+        mina accounts import -config-directory /root/.mina-config -privkey-path "$key_file"
+    fi
+done
 # Execute the puppeteer script
 exec /mina_daemon_puppeteer.py "$@"
 |}

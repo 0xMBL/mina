@@ -59,6 +59,7 @@ module Dockerfile = struct
         ; ("DAEMON_METRICS_PORT", "10001")
         ; ("MINA_PRIVKEY_PASS", "naughty blue worm")
         ; ("MINA_LIBP2P_PASS", "")
+        ; ("RAYON_NUM_THREADS", "6")
         ]
 
       let to_yojson env = `Assoc (List.map env ~f:(fun (k, v) -> (k, `String v)))
