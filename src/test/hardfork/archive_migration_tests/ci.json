@@ -1,0 +1,18 @@
+{
+  "executor": "bash",
+  "paths": {
+    "berkeley_migration":"/usr/local/bin/mina-berkeley-migration.exe",
+    "berkeley_account_tables":"/usr/local/bin/mina-berkeley-account-tables.exe",
+    "mainnet_genesis_ledger": "/etc/mina/test/genesis_ledgers/mainnet.json",
+    "mainnet_expected_ledger_folder": "/etc/mina/test/hardfork/test_data/mainnet_migration",
+    "create_schema_script": "src/app/archive/create_schema.sql",
+    "zkapp_tables_script": "src/app/archive/zkapp_tables.sql",
+    "random_data_ledger": "/etc/mina/test/hardfork/test_data/random_migration/genesis_ledger.json",
+    "random_data_expected_ledger_folder": "/etc/mina/test/hardfork/test_data/random_migration"
+  },
+  "db" : {
+    "password" : "postgres",
+    "user" : "postgres",
+    "port" : 5555
+  }
+}
