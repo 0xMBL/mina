@@ -35,4 +35,4 @@ docker exec postgres psql -U postgres -d random_mainnet < src/test/hardfork/test
 
 jq  '.db.host |= "'"$NETWORK_GATEWAY"'"' src/test/hardfork/archive_migration_tests/ci.json > ci.json
 
-docker run --entrypoint=mina-archive-migration-tests -v $BUILDKITE_BUILD_CHECKOUT_PATH/ci.json:/ci.json gcr.io/o1labs-192920/mina-test-suite:$MINA_DOCKER_TAG test --env /ci.json mainnet_migration
+docker run --entrypoint=mina-archive-migration-tests -v $BUILDKITE_BUILD_CHECKOUT_PATH:/workdir gcr.io/o1labs-192920/mina-test-suite:$MINA_DOCKER_TAG test --env /workdir/ci.json mainnet_migration
