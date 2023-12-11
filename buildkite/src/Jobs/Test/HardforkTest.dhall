@@ -14,8 +14,7 @@ let DebianVersions = ../../Constants/DebianVersions.dhall
 let Profiles = ../../Constants/Profiles.dhall
 
 
-let dependsOn = DebianVersions.dependsOn DebianVersions.DebVersion.Bullseye Profiles.Type.Standard
-
+let dependsOn = Dockers.dependsOn Dockers.Type.Bullseye Profiles.Type.Standard "test-suite"
 
 let buildTestCmd : Size -> Command.Type = \(cmd_target : Size) ->
   let key = "hardfork-tests" in
