@@ -246,7 +246,7 @@ build_deb mina-batch-txn
 
 ##################################### GENERATE TEST SUITE PACKAGE #######################################
 
-create_control_file mina-test-suite "" 'Test suite apps for mina.'
+create_control_file mina-test-suite "${SHARED_DEPS}" 'Test suite apps for mina.'
 
 mkdir -p "${BUILDDIR}/etc/mina/test/genesis_ledgers"
 mkdir -p "${BUILDDIR}/usr/local/bin"
