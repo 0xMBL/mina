@@ -90,7 +90,7 @@ module HardForkSteps = struct
     in
     Util.run_cmd_exn "." "psql"
       [ "-h"
-      ; "localhost"
+      ; t.env.db.host
       ; "-p"
       ; string_of_int t.env.db.port
       ; "-U"
