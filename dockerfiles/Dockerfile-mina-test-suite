@@ -1,4 +1,4 @@
-ARG image=ubuntu:focal
+ARG image=debian:bullseye
 FROM ${image} AS production
 ARG deb_codename=bullseye
 ARG deb_version
