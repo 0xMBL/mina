@@ -255,7 +255,7 @@ mkdir -p "${BUILDDIR}/etc/mina/test/hardfork/test_data"
 
 cp ../genesis_ledgers/mainnet.json "${BUILDDIR}/etc/mina/test/genesis_ledgers/mainnet.json"
 cp -r ../src/test/hardfork/test_data/* "${BUILDDIR}/etc/mina/test/hardfork/test_data"
-cp ../src/test/hardfork/archive_migration_tests/ci.json "${BUILDDIR}/etc/mina/test/archive_migration_tests/ci.json"
+cp ../src/test/hardfork/archive_migration_tests/ci.json "${BUILDDIR}/etc/mina/test/hardfork/archive_migration_tests/ci.json"
 
 # Binaries
 
