@@ -11,6 +11,7 @@ let RunInToolchain = ../../Command/RunInToolchain.dhall
 let Docker = ../../Command/Docker/Type.dhall
 let Size = ../../Command/Size.dhall
 let DebianVersions = ../../Constants/DebianVersions.dhall
+let Dockers = ../../Constants/DockerVersions.dhall
 let Profiles = ../../Constants/Profiles.dhall
 
 
