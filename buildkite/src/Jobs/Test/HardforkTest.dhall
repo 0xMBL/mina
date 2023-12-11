@@ -22,7 +22,7 @@ let buildTestCmd : Size -> Command.Type = \(cmd_target : Size) ->
   Command.build
     Command.Config::{
       commands = [
-        Cmd.run "buildkite/scripts/hardfork-tests.sh",
+        Cmd.run "buildkite/scripts/hardfork-archive-migration-tests.sh",
         Cmd.run "buildkite/scripts/upload-partial-coverage-data.sh ${key}"
       ],
       label = "hardfork-tests",
