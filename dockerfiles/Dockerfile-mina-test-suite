@@ -65,4 +65,4 @@ RUN echo "Building image with version $deb_version from repo $deb_release $deb_c
   && apt-get install --quiet --yes --allow-downgrades "mina-test-suite=$deb_version" \ 
   && rm -rf /var/lib/apt/lists/*
 
-ENTRYPOINT ["bash", "./docker-start.sh"]
+ENTRYPOINT ["sleep","infinity"]
