@@ -10,7 +10,7 @@ set +x
 CLEAR='\033[0m'
 RED='\033[0;31m'
 # Array of valid service names
-VALID_SERVICES=('mina-archive' 'mina-daemon' 'mina-daemon-instrumented' 'mina-archive-instrumented' 'mina-rosetta' 'mina-test-executive' 'mina-batch-txn' 'mina-zkapp-test-transaction' 'mina-toolchain' 'bot' 'leaderboard' 'delegation-backend' 'delegation-backend-toolchain' 'itn-orchestrator')
+VALID_SERVICES=('mina-archive', 'mina-daemon' 'mina-rosetta' 'mina-test-executive' 'mina-batch-txn' 'mina-zkapp-test-transaction' 'mina-toolchain' 'bot' 'leaderboard' 'delegation-backend' 'delegation-backend-toolchain' 'itn-orchestrator')
 
 function usage() {
   if [[ -n "$1" ]]; then
@@ -57,6 +57,19 @@ case "${DEB_CODENAME##*=}" in
 esac
 IMAGE="--build-arg image=${IMAGE}"
 
+
+# Determine profile for mina name. To preserve backward compatibility standard profile is default. 
+case "${DEB_PROFILE}" in
+  standard)
+    DOCKER_DEB_PROFILE=""
+    SERVICE_SUFFIX=""
+    ;;
+  *)
+    DOCKER_DEB_PROFILE="--build-arg deb_profile=${DEB_PROFILE}"
+    SERVICE_SUFFIX="-${DEB_PROFILE}"
+    ;;
+esac
+
 # Debug prints for visability
 # Substring removal to cut the --build-arg arguments on the = so that the output is exactly the input flags https://wiki.bash-hackers.org/syntax/pe#substring_removal
 echo "--service ${SERVICE} --version ${VERSION} --branch ${BRANCH##*=} --deb-version ${DEB_VERSION##*=} --deb-profile ${DOCKER_DEB_PROFILE##*=} --deb-release ${DEB_RELEASE##*=} --deb-codename ${DEB_CODENAME##*=}"
@@ -73,6 +86,7 @@ case "${SERVICE}" in
 mina-archive)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-archive"
   DOCKER_CONTEXT="dockerfiles/"
+  SERVICE=${SERVICE}${SERVICE_SUFFIX}
   ;;
 mina-archive-instrumented)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-archive"
@@ -88,6 +102,7 @@ mina-daemon)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-daemon"
   DOCKER_CONTEXT="dockerfiles/"
   VERSION="${VERSION}-${NETWORK##*=}"
+  SERVICE=${SERVICE}${SERVICE_SUFFIX}
   ;;
 mina-daemon-instrumented)
   DOCKERFILE_PATH="dockerfiles/Dockerfile-mina-daemon"
@@ -155,14 +170,12 @@ TAG="${DOCKER_REGISTRY}/${SERVICE}:${VERSION}"
 GITHASH=$(git rev-parse --short=7 HEAD)
 HASHTAG="${DOCKER_REGISTRY}/${SERVICE}:${GITHASH}-${DEB_CODENAME##*=}-${NETWORK##*=}"
 
-echo "building docker with parameters: $CACHE $NETWORK $IMAGE $DEB_CODENAME $DEB_RELEASE $DEB_VERSION $DOCKER_DEB_PROFILE $DOCKER_MINA_BUILD_PROFILE $BRANCH $REPO $extra_build_args $DOCKER_CONTEXT -t '$TAG'"
-
 # If DOCKER_CONTEXT is not specified, assume none and just pipe the dockerfile into docker build
 extra_build_args=$(echo ${EXTRA} | tr -d '"')
 if [[ -z "${DOCKER_CONTEXT}" ]]; then
-  cat $DOCKERFILE_PATH | docker build $CACHE $NETWORK $IMAGE $DEB_CODENAME $DEB_RELEASE $DEB_VERSION $DOCKER_DEB_PROFILE $DOCKER_MINA_BUILD_PROFILE $BRANCH $REPO $extra_build_args -t "$TAG" -
+  cat $DOCKERFILE_PATH | docker build $CACHE $NETWORK $IMAGE $DEB_CODENAME $DEB_RELEASE $DEB_VERSION $DOCKER_DEB_PROFILE $BRANCH $REPO $extra_build_args -t "$TAG" -
 else
-  docker build $CACHE $NETWORK $IMAGE $DEB_CODENAME $DEB_RELEASE $DEB_VERSION $DOCKER_DEB_PROFILE $DOCKER_MINA_BUILD_PROFILE $BRANCH $REPO $extra_build_args $DOCKER_CONTEXT -t "$TAG" -f $DOCKERFILE_PATH
+  docker build $CACHE $NETWORK $IMAGE $DEB_CODENAME $DEB_RELEASE $DEB_VERSION $DOCKER_DEB_PROFILE $BRANCH $REPO $extra_build_args $DOCKER_CONTEXT -t "$TAG" -f $DOCKERFILE_PATH
 fi
 
 

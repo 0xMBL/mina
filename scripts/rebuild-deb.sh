@@ -324,7 +324,6 @@ build_deb mina-zkapp-test-transaction
 ##################################### END ZKAPP TEST TXN PACKAGE #######################################
 
 ##################################### BERKELEY PACKAGE #######################################
-
 echo "------------------------------------------------------------"
 echo "--- Building Mina Berkeley testnet signatures deb without keys:"
 
