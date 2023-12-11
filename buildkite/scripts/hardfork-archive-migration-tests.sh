@@ -26,8 +26,9 @@ done
 
 wget -c https://storage.googleapis.com/mina-archive-dumps/$MAINNET_DUMP.tar.gz -O - | tar -xz
 
+docker exec postgres  psql  -U postgres -c "CREATE DATABASE archive_balances_migrated;"
 docker cp  $MAINNET_DUMP postgres:/$MAINNET_DUMP
-docker exec postgres psql -U postgres  <  $MAINNET_DUMP
+docker exec postgres psql -U postgres -d archive_balances_migrated  < /$MAINNET_DUMP
 NETWORK_GATEWAY=$(docker network inspect -f "{{(index .IPAM.Config 0).Gateway}}" hardfork)
 
 docker exec postgres  psql  -U postgres -c "CREATE DATABASE random_mainnet;"
