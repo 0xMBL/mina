@@ -7,7 +7,6 @@ POSTGRES_PORT=5555
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DOCKER=postgres:12-bullseye
-MINA_DOCKER_TAG=2.0.0rampup2-dkijania-migration-app-tests-27503a5-focal
 TEST_SUITE_DOCKER=gcr.io/o1labs-192920/mina-test-suite:$MINA_DOCKER_TAG
 REFERENCE_COMMIT=c980ba8
 MAINNET_DUMP=mainnet-archive-dump-2023-11-02_0000.sql
