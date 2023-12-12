@@ -16,7 +16,7 @@ sudo echo "deb [trusted=yes] http://packages.o1test.net bullseye ${MINA_DEB_RELE
 sudo apt-get update
 
 echo "Installing mina test suite package: mina-test-suite=${MINA_DEB_VERSION}"
-sudo apt-get install --allow-downgrades -y mina-test-suite=${MINA_DEB_VERSION} mina-berkeley-lightnet=${MINA_DEB_VERSION}
+sudo apt-get install --allow-downgrades -y mina-test-suite=${MINA_DEB_VERSION}
 
 export MINA_LIBP2P_PASS="naughty blue worm"
 export MINA_PRIVKEY_PASS="naughty blue worm"
