@@ -13,7 +13,7 @@ export DEBIAN_FRONTEND=noninteractive
 # time zone = US Pacific
 apt-get install -y git apt-transport-https ca-certificates curl wget
 
-git config --global --add safe.directory /workdir
+git config --global --add safe.directory $BUILDKITE_BUILD_CHECKOUT_PATH
 
 source buildkite/scripts/export-git-env-vars.sh
 
@@ -23,8 +23,6 @@ CONTAINER_FILE=docker.container
 
 PG_PORT=5433
 PG_PASSWORD=somepassword
-PG_CONN=postgres://postgres:$PG_PASSWORD@localhost:$PG_PORT/$DB
-
 DOCKER_IMAGE=12.4-alpine
 CONTAINER_FILE=docker.container
 
@@ -41,19 +39,29 @@ function cleanup () {
     rm -f $CONTAINER_FILE
 }
 
+docker network create replayer || true
+
 # -v mounts dir with Unix socket on host
 echo "Starting docker with Postgresql"
 docker run \
+       --network replayer \
        --volume $BUILDKITE_BUILD_CHECKOUT_PATH:/workdir \
        --name replayer-postgres -d -p $PG_PORT:5432 \
        -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=$PG_PASSWORD -e POSTGRES_DB=$DB postgres:$DOCKER_IMAGE > $CONTAINER_FILE
 
-#trap "cleanup; exit 1" SIGINT
+trap "cleanup; exit 1" SIGINT
 
 # wait for Postgresql to become available
 sleep 5
 
 echo "Populating archive database"
-docker exec replayer-postgres psql $PG_CONN < $TEST_DIR/test/archive_db.sql
+docker exec replayer-postgres psql $PG_CONN -f $TEST_DIR/test/archive_db.sql
 
-docker run gcr.io/o1labs-192920/mina-archive:$MINA_DOCKER_TAG /workdir/scripts/replayer-test.sh -d $TEST_DIR -a mina-replayer -p $PG_CONN
+NETWORK_GATEWAY=$(docker network inspect -f "{{(index .IPAM.Config 0).Gateway}}" replayer)
+
+PG_CONN=postgres://postgres:$PG_PASSWORD@$NETWORK_GATEWAY:$PG_PORT/$DB
+
+
+docker run --network replayer --volume $BUILDKITE_BUILD_CHECKOUT_PATH:/workdir gcr.io/o1labs-192920/mina-archive:$MINA_DOCKER_TAG /workdir/scripts/replayer-test.sh -d $TEST_DIR -a mina-replayer -p $PG_CONN
+
+cleanup
