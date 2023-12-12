@@ -6,28 +6,54 @@ set -eox pipefail
 
 echo "Updating apt, installing packages"
 apt-get update
+
 # Don't prompt for answers during apt-get install
 export DEBIAN_FRONTEND=noninteractive
 
 # time zone = US Pacific
-/bin/echo -e "12\n10" | sudo apt-get install -y tzdata
 apt-get install -y git apt-transport-https ca-certificates curl wget
 
 git config --global --add safe.directory /workdir
 
 source buildkite/scripts/export-git-env-vars.sh
 
-echo "deb [trusted=yes] http://packages.o1test.net bullseye ${MINA_DEB_RELEASE}" | sudo tee /etc/apt/sources.list.d/mina.list
-apt-get update
+DB=archive
+DOCKER_IMAGE=12.4-alpine
+CONTAINER_FILE=docker.container
 
-echo "Installing archive node package: mina-archive=${MINA_DEB_VERSION}"
-apt-get install --allow-downgrades -y mina-archive=${MINA_DEB_VERSION}
+PG_PORT=5433
+PG_PASSWORD=somepassword
+PG_CONN=postgres://postgres:$PG_PASSWORD@localhost:$PG_PORT/$DB
 
-echo "Starting Postgresql service"
-service postgresql start
+DOCKER_IMAGE=12.4-alpine
+CONTAINER_FILE=docker.container
 
-echo "Postgres is up - executing command"
+function cleanup () {
+    CONTAINER=`cat $CONTAINER_FILE`
 
-echo "Running replayer"
+    if [[ ! -z $CONTAINER ]] ; then
+	echo "Killing, removing docker container"
+	for action in kill rm; do
+	    docker container $action $CONTAINER
+	done
+    fi
 
-./scripts/replayer-test.sh -d $TEST_DIR -a mina-replayer
+    rm -f $CONTAINER_FILE
+}
+
+# -v mounts dir with Unix socket on host
+echo "Starting docker with Postgresql"
+docker run \
+       --volume $BUILDKITE_BUILD_CHECKOUT_PATH:/workdir \
+       --name replayer-postgres -d -p $PG_PORT:5432 \
+       -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=$PG_PASSWORD -e POSTGRES_DB=$DB postgres:$DOCKER_IMAGE > $CONTAINER_FILE
+
+#trap "cleanup; exit 1" SIGINT
+
+# wait for Postgresql to become available
+sleep 5
+
+echo "Populating archive database"
+docker exec replayer-postgres psql $PG_CONN < $TEST_DIR/test/archive_db.sql
+
+docker run gcr.io/o1labs-192920/mina-archive:$MINA_DOCKER_TAG /workdir/scripts/replayer-test.sh -d $TEST_DIR -a mina-replayer -p $PG_CONN
