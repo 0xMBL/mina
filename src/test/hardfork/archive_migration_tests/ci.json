@@ -1,8 +1,8 @@
 {
   "executor": "bash",
   "paths": {
-    "berkeley_migration":"/usr/local/bin/mina-berkeley-migration.exe",
-    "berkeley_account_tables":"/usr/local/bin/mina-berkeley-account-tables.exe",
+    "berkeley_migration":"/usr/local/bin/mina-berkeley-migration",
+    "berkeley_account_tables":"/usr/local/bin/mina-berkeley-account-tables",
     "mainnet_genesis_ledger": "/etc/mina/test/genesis_ledgers/mainnet.json",
     "mainnet_expected_ledger_folder": "/etc/mina/test/hardfork/test_data/mainnet_migration",
     "create_schema_script": "/workdir/src/app/archive/create_schema.sql",
