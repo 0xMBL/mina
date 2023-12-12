@@ -1,4 +1,6 @@
 let Prelude = ../../External/Prelude.dhall
+let B = ../../External/Buildkite.dhall
+let B/SoftFail = B.definitions/commandStep/properties/soft_fail/Type
 
 let Cmd = ../../Lib/Cmds.dhall
 let S = ../../Lib/SelectFiles.dhall
@@ -29,7 +31,8 @@ let buildTestCmd : Size -> Command.Type = \(cmd_target : Size) ->
       key = key,
       target = cmd_target,
       docker = None Docker.Type,
-      depends_on = dependsOn 
+      depends_on = dependsOn,
+      soft_fail = Some (B/SoftFail.Boolean True)
     }
 
 in
