@@ -15,7 +15,9 @@ in  Pipeline.build
       , spec = JobSpec::{
         , dirtyWhen =
           [ S.strictlyStart (S.contains "src")
-          , S.exactly "buildkite/scripts/replayer-test" "sh"
+          , S.exactly "buildkite/scripts/replayer-test" "sh",
+          , S.exactly "buildkite/src/Jobs/Test/ReplayerTest" "dhall"
+          , S.exactly "buildkite/src/Command/ReplayerTest" "dhall"
           ]
         , path = "Test"
         , name = "ReplayerTest"
